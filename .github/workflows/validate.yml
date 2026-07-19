@@ -1,0 +1,25 @@
+name: Validate configuration
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare non-secret validation environment
+        run: |
+          cp .env.example .env
+          sed -i 's/CANVIA_AQUEST_SECRET/validation-secret-not-for-production/' .env
+          sed -i 's/admin@example.invalid/validation@example.invalid/' .env
+          sed -i 's/CANVIA_AQUESTA_CONTRASENYA/Validation-Only-Password-123!/' .env
+      - name: Validate Docker Compose
+        run: docker compose --env-file .env config --quiet
+      - name: Check shell syntax
+        run: bash -n scripts/*.sh

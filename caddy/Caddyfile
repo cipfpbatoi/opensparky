@@ -1,0 +1,7 @@
+spark-6169.cipfpbatoi.lan {
+	tls internal
+
+	encode zstd gzip
+
+	reverse_proxy open-webui:8080
+}
