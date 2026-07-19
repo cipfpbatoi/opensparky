@@ -32,6 +32,7 @@ restore_one() {
 
 restore_one ollama_data dgx_ollama_data
 restore_one openwebui_data dgx_openwebui_data
+restore_one postgres_data dgx_postgres_data
 
 docker compose up -d
 echo "Restauració completada. Executa scripts/smoke-test.sh"

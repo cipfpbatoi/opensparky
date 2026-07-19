@@ -9,12 +9,12 @@ DEST="${1:-backups/${STAMP}}"
 mkdir -p "$DEST"
 
 restart_services() {
-  docker compose start ollama open-webui >/dev/null 2>&1 || true
+  docker compose start postgres ollama open-webui >/dev/null 2>&1 || true
 }
 trap restart_services EXIT
 
 echo "Parant serveis per obtindre una còpia consistent..."
-docker compose stop open-webui ollama
+docker compose stop open-webui ollama postgres
 
 backup_one() {
   local logical="$1" volume="$2"
@@ -28,6 +28,7 @@ backup_one() {
 
 backup_one ollama_data dgx_ollama_data
 backup_one openwebui_data dgx_openwebui_data
+backup_one postgres_data dgx_postgres_data
 
 (
   cd "$DEST"

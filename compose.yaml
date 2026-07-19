@@ -51,6 +51,55 @@ services:
       retries: 5
       start_period: 45s
 
+  postgres:
+    image: pgvector/pgvector:${POSTGRES_IMAGE_TAG:-pg16}
+    platform: linux/arm64
+    container_name: dgx-postgres
+    restart: unless-stopped
+    init: true
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-openwebui}
+      POSTGRES_USER: ${POSTGRES_USER:-openwebui}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defineix POSTGRES_PASSWORD en el fitxer .env}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # S'executa només quan el volum de dades és nou.
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - ai_backend
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # L'entrypoint oficial de Postgres arranca com a root per a fer
+    # chown del volum de dades i després baixa privilegis a l'usuari
+    # postgres. Calen estes capacitats mínimes per a eixa transició.
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETUID
+      - SETGID
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+      - /var/run/postgresql:rw,noexec,nosuid,nodev,size=64m,mode=1777
+    shm_size: 256mb
+    pids_limit: 256
+    cpus: ${POSTGRES_CPUS:-4}
+    mem_limit: ${POSTGRES_MEMORY_LIMIT:-8g}
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U $${POSTGRES_USER:-openwebui} -d $${POSTGRES_DB:-openwebui}"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
   open-webui:
     build:
       context: .
@@ -67,12 +116,20 @@ services:
     depends_on:
       ollama:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
     ports:
       # La interfície i l'API es publiquen només en localhost.
       # El proxy invers o cloudflared publicarà WEBUI_URL amb HTTPS.
       - "127.0.0.1:${OPEN_WEBUI_PORT:-3000}:8080"
     environment:
       OLLAMA_BASE_URL: http://ollama:11434
+
+      # Usuaris, xats i base vectorial en el mateix PostgreSQL.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-openwebui}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-openwebui}
+      VECTOR_DB: pgvector
+      PGVECTOR_DB_URL: postgresql://${POSTGRES_USER:-openwebui}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-openwebui}
+
       WEBUI_URL: ${WEBUI_URL:-https://ia-professorat.cipfpbatoi.lan}
       WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:?Defineix WEBUI_SECRET_KEY en el fitxer .env}
       WEBUI_AUTH: "true"
@@ -173,7 +230,9 @@ volumes:
     name: dgx_ollama_data
   openwebui_data:
     name: dgx_openwebui_data
-  
+  postgres_data:
+    name: dgx_postgres_data
+
   caddy_data:
     name: dgx_caddy_data
 

@@ -2,9 +2,10 @@
 
 Desplegament ARM64 per a DGX Spark amb:
 
-- Ollama i Open WebUI en contenidors separats;
+- Ollama, Open WebUI i PostgreSQL+pgvector en contenidors separats;
 - GPU NVIDIA disponible per a Ollama;
-- volums nous `dgx_ollama_data` i `dgx_openwebui_data`;
+- volums nous `dgx_ollama_data`, `dgx_openwebui_data` i `dgx_postgres_data`;
+- PostgreSQL amb l'extensió `vector` com a base principal i base vectorial d'Open WebUI, sense cap port publicat;
 - Ollama disponible en `127.0.0.1:11434` per a proves locals;
 - Open WebUI disponible en `127.0.0.1:3000` per al proxy invers;
 - claus API personals d'Open WebUI;
@@ -26,9 +27,12 @@ Open WebUI ────── clau personal, grups i permisos
           │
      xarxa Docker
           │
-Ollama:11434 ─── GPU NVIDIA
-          │
-  dgx_ollama_data
+     ┌────┴────┐
+     │         │
+Ollama:11434  postgres:5432 ── PostgreSQL + pgvector
+GPU NVIDIA     (usuaris, xats, vectors)
+     │         │
+dgx_ollama_data  dgx_postgres_data
 
 Administració local de la DGX
           │
@@ -62,7 +66,10 @@ Cal canviar, com a mínim:
 WEBUI_URL=https://ia-professorat.cipfpbatoi.lan
 WEBUI_ADMIN_EMAIL=correu-administrador
 WEBUI_ADMIN_PASSWORD=contrasenya-llarga-i-unica
+POSTGRES_PASSWORD=contrasenya-llarga-i-unica
 ```
+
+`POSTGRES_PASSWORD` es pot generar amb `openssl rand -base64 36`. Només s'aplica en el primer arrancada del volum `dgx_postgres_data`; canviar-la després requereix actualitzar-la també dins de PostgreSQL.
 
 ### 3. Validar la DGX
 
@@ -110,6 +117,16 @@ No s'ha de canviar per:
 ```
 
 perquè això publicaria Ollama en les interfícies de xarxa de la DGX sense autenticació.
+
+## PostgreSQL + pgvector
+
+El contenidor `postgres` no publica cap port: només és accessible des de la xarxa Docker `dgx_ai_backend`. Open WebUI hi guarda usuaris, xats i, mitjançant `VECTOR_DB=pgvector`, els embeddings de la RAG.
+
+`postgres-init/01-enable-vector.sql` crea l'extensió `vector` i només s'executa quan el volum `dgx_postgres_data` és nou. Si cal tornar a executar-lo sobre dades existents, cal fer-ho manualment:
+
+```bash
+docker compose exec postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "CREATE EXTENSION IF NOT EXISTS vector;"
+```
 
 ## API dels usuaris
 
@@ -178,6 +195,8 @@ Restauració:
 ```
 
 La còpia dels models pot ocupar centenars de gigabytes. En producció convé separar la política de còpia de la base d'Open WebUI de la política de recuperació dels models descarregables.
+
+`make backup` també para i copia `dgx_postgres_data` (usuaris, xats i vectors). La còpia és en fred: els tres serveis es paren mentre dura.
 
 ## GitHub
 
