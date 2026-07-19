@@ -41,14 +41,14 @@ La clau hereta el rol, grups i models visibles de l'usuari. No s'ha de compartir
 ### Llistar models
 
 ```bash
-curl https://ia-professorat.cipfpbatoi.lan/api/models \
+curl https://spark-6169.cipfpbatoi.lan/api/models \
   -H 'Authorization: Bearer sk-CANVIA_ACI'
 ```
 
 ### Chat completions compatible amb OpenAI
 
 ```bash
-curl https://ia-professorat.cipfpbatoi.lan/api/chat/completions \
+curl https://spark-6169.cipfpbatoi.lan/api/chat/completions \
   -H 'Authorization: Bearer sk-CANVIA_ACI' \
   -H 'Content-Type: application/json' \
   -d '{
@@ -61,7 +61,7 @@ curl https://ia-professorat.cipfpbatoi.lan/api/chat/completions \
 Per a clients compatibles amb OpenAI:
 
 ```text
-Base URL: https://ia-professorat.cipfpbatoi.lan/api
+Base URL: https://spark-6169.cipfpbatoi.lan/api
 API key:  la clau personal sk-...
 ```
 
@@ -71,7 +71,7 @@ Exemple Python:
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="https://ia-professorat.cipfpbatoi.lan/api",
+    base_url="https://spark-6169.cipfpbatoi.lan/api",
     api_key="sk-CANVIA_ACI",
 )
 
@@ -87,12 +87,12 @@ print(response.choices[0].message.content)
 S'han autoritzat únicament rutes d'inferència, llistat i embeddings. No s'han autoritzat descàrrega, eliminació ni còpia de models.
 
 ```bash
-curl https://ia-professorat.cipfpbatoi.lan/ollama/api/tags \
+curl https://spark-6169.cipfpbatoi.lan/ollama/api/tags \
   -H 'Authorization: Bearer sk-CANVIA_ACI'
 ```
 
 ```bash
-curl https://ia-professorat.cipfpbatoi.lan/ollama/api/chat \
+curl https://spark-6169.cipfpbatoi.lan/ollama/api/chat \
   -H 'Authorization: Bearer sk-CANVIA_ACI' \
   -H 'Content-Type: application/json' \
   -d '{

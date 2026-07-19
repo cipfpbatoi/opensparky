@@ -63,7 +63,7 @@ chmod 600 .env
 Cal canviar, com a mínim:
 
 ```dotenv
-WEBUI_URL=https://ia-professorat.cipfpbatoi.lan
+WEBUI_URL=https://spark-6169.cipfpbatoi.lan
 WEBUI_ADMIN_EMAIL=correu-administrador
 WEBUI_ADMIN_PASSWORD=contrasenya-llarga-i-unica
 POSTGRES_PASSWORD=contrasenya-llarga-i-unica
@@ -177,7 +177,7 @@ make test-api API_KEY=sk-... MODEL=nom:model
 Per provar contra el domini HTTPS:
 
 ```bash
-OPENWEBUI_API_BASE_URL=https://ia-professorat.cipfpbatoi.lan \
+OPENWEBUI_API_BASE_URL=https://spark-6169.cipfpbatoi.lan \
 OPENWEBUI_API_KEY=sk-... \
 ./scripts/test-openwebui-api.sh nom:model
 ```
