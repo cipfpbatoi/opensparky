@@ -105,10 +105,10 @@ services:
       context: .
       dockerfile: containers/openwebui.Dockerfile
       args:
-        OPEN_WEBUI_VERSION: ${OPEN_WEBUI_VERSION:-v0.10.2}
+        OPEN_WEBUI_VERSION: ${OPEN_WEBUI_VERSION:-v0.11.0}
         APP_UID: ${APP_UID:-10001}
         APP_GID: ${APP_GID:-10001}
-    image: local/dgx-openwebui:${OPEN_WEBUI_VERSION:-v0.10.2}-arm64
+    image: local/dgx-openwebui:${OPEN_WEBUI_VERSION:-v0.11.0}-arm64
     platform: linux/arm64
     container_name: dgx-openwebui
     restart: unless-stopped
@@ -144,7 +144,10 @@ services:
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
       WEBUI_SESSION_COOKIE_SECURE: ${WEBUI_SESSION_COOKIE_SECURE:-true}
       WEBUI_SESSION_COOKIE_SAME_SITE: strict
-      CORS_ALLOW_ORIGIN: ${WEBUI_URL:-https://ia-professorat.cipfpbatoi.lan}
+      # Open WebUI separa els orígens amb ';', no amb ','. Sense orígens de
+      # depuració per defecte: afig-los només en el .env local si cal
+      # (vegeu CORS_ALLOW_ORIGIN en .env.example).
+      CORS_ALLOW_ORIGIN: ${CORS_ALLOW_ORIGIN:-${WEBUI_URL:-https://ia-professorat.cipfpbatoi.lan}}
       HSTS: max-age=31536000;includeSubDomains
       XFRAME_OPTIONS: DENY
       XCONTENT_TYPE: nosniff
