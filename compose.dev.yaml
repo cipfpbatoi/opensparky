@@ -1,0 +1,8 @@
+name: dgx-ai-pilot
+
+services:
+  tika:
+    ports:
+      # Exposició opcional per a proves locals.
+      # En producció, no publicar cap port (comentat).
+      - "127.0.0.1:${TIKA_HOST_PORT:-9998}:9998"

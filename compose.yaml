@@ -100,6 +100,37 @@ services:
       retries: 10
       start_period: 20s
 
+  tika:
+    image: apache/tika:${TIKA_VERSION:-latest}
+    platform: linux/arm64
+    container_name: dgx-tika
+    restart: unless-stopped
+    init: true
+    environment:
+      TIKA_JVM_OPTS: ${TIKA_JVM_OPTS:-"-Xmx3g -Xms512m"}
+    networks:
+      - ai_backend
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=1g,mode=1777
+    pids_limit: 256
+    cpus: ${TIKA_CPUS:-4}
+    mem_limit: ${TIKA_MEMORY_LIMIT:-4g}
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "java -jar /tika-server-standard-3.3.1.jar --help >/dev/null 2>&1"
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
   open-webui:
     build:
       context: .
@@ -118,6 +149,8 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      tika:
+        condition: service_healthy
     ports:
       # La interfície i l'API es publiquen només en localhost.
       # El proxy invers o cloudflared publicarà WEBUI_URL amb HTTPS.
@@ -129,6 +162,10 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-openwebui}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-openwebui}
       VECTOR_DB: pgvector
       PGVECTOR_DB_URL: postgresql://${POSTGRES_USER:-openwebui}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-openwebui}
+
+      # Extractor de contingut amb Apache Tika
+      CONTENT_EXTRACTION_ENGINE: tika
+      TIKA_SERVER_URL: http://tika:9998
 
       WEBUI_URL: ${WEBUI_URL:-https://ia-professorat.cipfpbatoi.lan}
       WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:?Defineix WEBUI_SECRET_KEY en el fitxer .env}

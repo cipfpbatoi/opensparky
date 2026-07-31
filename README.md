@@ -1,13 +1,15 @@
-# DGX Spark: Ollama i Open WebUI nets, amb API controlada
+# DGX Spark: Ollama i Open WebUI nets, amb API controlada i Tika
 
 Desplegament ARM64 per a DGX Spark amb:
 
-- Ollama, Open WebUI i PostgreSQL+pgvector en contenidors separats;
+- Ollama, Open WebUI, PostgreSQL+pgvector i Apache Tika en contenidors separats;
 - GPU NVIDIA disponible per a Ollama;
 - volums nous `dgx_ollama_data`, `dgx_openwebui_data` i `dgx_postgres_data`;
 - PostgreSQL amb l'extensió `vector` com a base principal i base vectorial d'Open WebUI, sense cap port publicat;
+- Apache Tika disponible internament en `tika:9998` per a Open WebUI;
 - Ollama disponible en `127.0.0.1:11434` per a proves locals;
 - Open WebUI disponible en `127.0.0.1:3000` per al proxy invers;
+- Apache Tika exposat opcionalment en `127.0.0.1:9998` només per a proves de desenvolupament;
 - claus API personals d'Open WebUI;
 - rutes API limitades a inferència, models i embeddings;
 - contenidors no privilegiats i sense capacitats Linux addicionals.
@@ -25,18 +27,33 @@ Proxy invers o Cloudflare Tunnel
           │
 Open WebUI ────── clau personal, grups i permisos
           │
-     xarxa Docker
+     xarxa Docker (ai_backend)
           │
-     ┌────┴────┐
-     │         │
-Ollama:11434  postgres:5432 ── PostgreSQL + pgvector
-GPU NVIDIA     (usuaris, xats, vectors)
-     │         │
-dgx_ollama_data  dgx_postgres_data
+    ┌─────┴──────┐
+    │            │
+    │      ┌─────┴───────┐
+    │      │             │
+Ollama:11434  postgres:5432   tika:9998
+GPU NVIDIA     (usuaris, xats, vectors)  (extracció documental)
+    │            │             │
+dgx_ollama_data  dgx_postgres_data  (intern)
+                                             │
+                                      localhost:9998 (opcional, proves)
+```
 
-Administració local de la DGX
-          │
-127.0.0.1:11434 ── API Ollama sense autenticació
+## Apache Tika
+
+Apache Tika és un servei d'extracció de contingut que Open WebUI utilitza per a processar documents PDF, DOCX, ODT i altres formats. El servei:
+
+- Executa Apache Tika 3.x en un contenidor separat;
+- És accessible des de la xarxa Docker interna `dgx_ai_backend` a través de `http://tika:9998`;
+- **No s'exposa a la LAN en producció**; només es publica el port 9998 en `127.0.0.1` quan s'activa l'override de desenvolupament;
+- Compta amb healthcheck i límits de recursos (4 vCPUs, 4 GB memòria);
+
+Per a activar l'accés des de l'amfitrió per a proves:
+
+```bash
+docker compose -f compose.yaml -f compose.dev.yaml up -d
 ```
 
 ## Desplegament
@@ -82,7 +99,12 @@ POSTGRES_PASSWORD=contrasenya-llarga-i-unica
 ```bash
 docker compose build --pull
 docker compose up -d
-docker compose ps
+```
+
+Per a proves locals amb Tika accessible des de localhost:
+
+```bash
+docker compose -f compose.yaml -f compose.dev.yaml up -d
 ```
 
 ### 5. Descarregar un model
@@ -97,6 +119,14 @@ make pull-model MODEL=gpt-oss:120b
 ./scripts/smoke-test.sh
 curl http://127.0.0.1:11434/api/tags
 curl http://127.0.0.1:3000/health
+```
+
+### 7. Validar Apache Tika
+
+```bash
+docker compose ps
+docker compose exec openwebui \
+  python -c "import urllib.request; print(urllib.request.urlopen('http://tika:9998/version').read().decode())"
 ```
 
 ## Accés local a Ollama
@@ -117,6 +147,37 @@ No s'ha de canviar per:
 ```
 
 perquè això publicaria Ollama en les interfícies de xarxa de la DGX sense autenticació.
+
+## Apache Tika
+
+El contenidor `tika` no publica cap port a la xarxa de producció: només és accessible des de la xarxa Docker interna `dgx_ai_backend`. Open WebUI hi accedeix via `http://tika:9998` per a extracció de contingut de documents.
+
+Per a provar Apache Tika des de l'amfitrió (desenvolupament):
+
+```bash
+docker compose -f compose.yaml -f compose.dev.yaml up -d tika
+curl http://127.0.0.1:9998/version
+```
+
+### Configuració d'Open WebUI
+
+Open WebUI s'automàtica amb Apache Tika mitjançant les variables:
+
+```yaml
+CONTENT_EXTRACTION_ENGINE: tika
+TIKA_SERVER_URL: http://tika:9998
+```
+
+### Proves d'extracció
+
+Prova des del contenidor d'Open WebUI:
+
+```bash
+docker compose exec openwebui \
+  python -c "import urllib.request; print(urllib.request.urlopen('http://tika:9998/version').read().decode())"
+```
+
+**Nota:** L'OCR de PDFs escanejats no està habilitat per defecte i requereix configuració addicional.
 
 ## PostgreSQL + pgvector
 
@@ -197,6 +258,32 @@ Restauració:
 La còpia dels models pot ocupar centenars de gigabytes. En producció convé separar la política de còpia de la base d'Open WebUI de la política de recuperació dels models descarregables.
 
 `make backup` també para i copia `dgx_postgres_data` (usuaris, xats i vectors). La còpia és en fred: els tres serveis es paren mentre dura.
+
+## Actualització i rollback
+
+### Actualització d'Apache Tika
+
+1. Fixar la nova versió a `.env.example`:
+   ```dotenv
+   TIKA_VERSION=3.0.0-java21
+   ```
+2. Executar `docker compose pull tika`
+3. Validar amb `docker compose config --quiet`
+4. Recrear només Tika: `docker compose up -d tika`
+5. Comprovar healthcheck: `docker compose ps`
+6. Provar una ingesta documental
+
+### Rollback
+
+Si falla, tornar a la versió anterior al `.env`:
+
+```bash
+sed -i 's/TIKA_VERSION=nova-versio/TIKA_VERSION=versio-anterior/' .env
+docker compose pull tika
+docker compose up -d tika
+```
+
+No s'eliminen volums ni dades d'Open WebUI.
 
 ## GitHub
 
