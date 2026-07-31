@@ -263,9 +263,9 @@ La còpia dels models pot ocupar centenars de gigabytes. En producció convé se
 
 ### Actualització d'Apache Tika
 
-1. Fixar la nova versió a `.env.example`:
+1. Comprovar que la nova etiqueta té imatge `linux/arm64` (`docker manifest inspect apache/tika:<versió>`) i fixar-la en `.env` (mai `latest`), per exemple:
    ```dotenv
-   TIKA_VERSION=3.0.0-java21
+   TIKA_VERSION=3.1.0.0-full
    ```
 2. Executar `docker compose pull tika`
 3. Validar amb `docker compose config --quiet`
