@@ -29,6 +29,15 @@ model_list:
   #     api_base: http://vllm-coding:8000/v1
   #     api_key: os.environ/VLLM_CODING_API_KEY
 
+# El magatzem de vectors (connector litellm-pgvector) NO es declara ací.
+# Provat el 2026-09-03: carregar "vector_store_registry" des de config.yaml
+# està trencat en la imatge litellm-database:main-stable (issue oberta i
+# coneguda del projecte, BerriAI/litellm#25947 — la secció es llig bé del
+# YAML però LiteLLM no l'aplica en arrancar). El registrem en canvi via
+# l'API de gestió (POST /vector_store/new), que sí funciona i persisteix en
+# la base de dades de LiteLLM: vegeu scripts/litellm-register-vectorstore.sh
+# i el pas corresponent en README.md.
+
 general_settings:
   store_model_in_db: false
 

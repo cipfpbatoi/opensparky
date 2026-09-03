@@ -261,6 +261,78 @@ services:
       retries: 5
       start_period: 60s
 
+  # Connector no oficial (BerriAI/litellm-pgvector) que exposa PostgreSQL+
+  # pgvector com una Vector Store API OpenAI-compatible, perquè LiteLLM
+  # l'usa com a "vector_store_registry" (/v1/vector_stores). Genera els
+  # embeddings cridant de nou a LiteLLM (bge-m3 via vllm-embeddings) amb una
+  # clau virtual pròpia, restringida a eixe model.
+  litellm-pgvector:
+    build:
+      context: .
+      dockerfile: containers/litellm-pgvector.Dockerfile
+      args:
+        LITELLM_PGVECTOR_REF: ${LITELLM_PGVECTOR_REF:-b553f84a32f580b4303297df5567f25912b59d93}
+        EMBEDDING_DIMENSIONS: ${LITELLM_PGVECTOR_EMBEDDING_DIMENSIONS:-1024}
+        APP_UID: ${APP_UID:-10001}
+        APP_GID: ${APP_GID:-10001}
+    image: local/dgx-litellm-pgvector:${LITELLM_PGVECTOR_REF:-b553f84a32f580b4303297df5567f25912b59d93}-arm64
+    platform: linux/arm64
+    container_name: dgx-litellm-pgvector
+    restart: unless-stopped
+    init: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      # Accés directe en loopback per a crear/gestionar magatzems de
+      # vectors (scripts/litellm-register-vectorstore.sh), igual que la
+      # resta de serveis administrables.
+      - "127.0.0.1:${LITELLM_PGVECTOR_PORT:-8010}:8000"
+    environment:
+      # Reutilitza la base 'openwebui', que ja té l'extensió pgvector
+      # activada (01-enable-vector.sql) i és accessible amb el rol
+      # existent: no calen base ni rol nous. Taules pròpies del connector
+      # (vector_stores, embeddings), sense col·lisió amb les d'Open WebUI.
+      # Parts soltes (no DATABASE_URL ja construïda): el CMD de la imatge la
+      # munta codificant PG_PASSWORD per URL, vegeu containers/litellm-pgvector.Dockerfile.
+      PG_HOST: postgres
+      PG_PORT: "5432"
+      PG_USER: ${POSTGRES_USER:-openwebui}
+      PG_PASSWORD: ${POSTGRES_PASSWORD}
+      PG_DATABASE: ${POSTGRES_DB:-openwebui}
+      SERVER_API_KEY: ${LITELLM_PGVECTOR_SERVER_API_KEY:?Defineix LITELLM_PGVECTOR_SERVER_API_KEY en el fitxer .env}
+      # "openai/" li diu al SDK de LiteLLM que use el client OpenAI-
+      # compatible contra EMBEDDING__BASE_URL (el prefix es lleva abans
+      # d'enviar la petició; sense ell falla amb "LLM Provider NOT provided").
+      EMBEDDING__MODEL: openai/bge-m3
+      EMBEDDING__BASE_URL: http://litellm:4000
+      # Clau virtual de LiteLLM restringida al model bge-m3 (mai la mestra).
+      # Es genera DESPRÉS d'alçar litellm, amb scripts/litellm-create-key.sh
+      # (vegeu README.md).
+      EMBEDDING__API_KEY: ${LITELLM_PGVECTOR_EMBEDDING_API_KEY:?Defineix LITELLM_PGVECTOR_EMBEDDING_API_KEY en el fitxer .env (clau virtual creada amb scripts/litellm-create-key.sh, restringida a bge-m3)}
+      EMBEDDING__DIMENSIONS: ${LITELLM_PGVECTOR_EMBEDDING_DIMENSIONS:-1024}
+    networks:
+      - ai_backend
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=512m,mode=1777
+    pids_limit: 256
+    cpus: ${LITELLM_PGVECTOR_CPUS:-2}
+    mem_limit: ${LITELLM_PGVECTOR_MEMORY_LIMIT:-2g}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          python3 -c "import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
   litellm:
     image: ghcr.io/berriai/litellm-database:${LITELLM_VERSION:-main-stable}
     platform: linux/arm64
@@ -292,6 +364,13 @@ services:
       VLLM_EMBEDDINGS_API_KEY: ${VLLM_EMBEDDINGS_API_KEY}
       VLLM_REASONING_API_KEY: ${VLLM_REASONING_API_KEY}
       VLLM_CODING_API_KEY: ${VLLM_CODING_API_KEY:-}
+      # Clau del connector litellm-pgvector (vector_store_registry en
+      # litellm/config.yaml). No hi ha dependència d'arrancada entre tots dos
+      # (litellm-pgvector no necessita litellm fins a la primera petició real
+      # d'embedding, i litellm no necessita litellm-pgvector per a arrancar):
+      # evita el cicle amb LITELLM_PGVECTOR_EMBEDDING_API_KEY, que només es
+      # pot generar DESPRÉS que litellm ja estiga en marxa.
+      LITELLM_PGVECTOR_SERVER_API_KEY: ${LITELLM_PGVECTOR_SERVER_API_KEY:?Defineix LITELLM_PGVECTOR_SERVER_API_KEY en el fitxer .env}
     volumes:
       - ./litellm/config.yaml:/app/config.yaml:ro
     networks:
@@ -354,6 +433,14 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-openwebui}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-openwebui}
       VECTOR_DB: pgvector
       PGVECTOR_DB_URL: postgresql://${POSTGRES_USER:-openwebui}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-openwebui}
+
+      # Embeddings de la RAG (fitxers/coneixement pujats a Open WebUI) via
+      # bge-m3 servit per vllm-embeddings, per LiteLLM. RAG_OPENAI_API_* són
+      # variables PRÒPIES (no cauen sobre OPENAI_API_BASE_URLS/KEYS de dalt).
+      RAG_EMBEDDING_ENGINE: openai
+      RAG_EMBEDDING_MODEL: bge-m3
+      RAG_OPENAI_API_BASE_URL: http://litellm:4000/v1
+      RAG_OPENAI_API_KEY: ${OPENWEBUI_LITELLM_API_KEY:?Defineix OPENWEBUI_LITELLM_API_KEY en el fitxer .env (clau virtual creada amb scripts/litellm-create-key.sh)}
 
       # Extractor de contingut amb Apache Tika
       CONTENT_EXTRACTION_ENGINE: tika

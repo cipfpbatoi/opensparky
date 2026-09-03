@@ -13,6 +13,7 @@ make smoke            # ./scripts/smoke-test.sh
 make test-vllm SERVICE=embeddings|reasoning|coding   # prova un vLLM directament (compose.dev.yaml)
 make test-litellm API_KEY=sk-... MODEL=gpt-oss-120b  # prova l'API de LiteLLM
 make litellm-create-key USER=id [BUDGET=usd] [MODELS=m1,m2]
+make litellm-register-vectorstore   # magatzem de vectors LiteLLM+pgvector, opcional
 make backup
 docker compose config --quiet   # valida compose.yaml (el que fa CI)
 bash -n scripts/*.sh            # valida sintaxi dels scripts (el que fa CI)
@@ -27,11 +28,12 @@ CI (`.github/workflows/validate.yml`) genera un `.env` de validació a partir de
 - El contenidor `postgres` no ha de publicar cap port; només accessible des de la xarxa Docker `dgx_ai_backend`.
 - **Mai** usar `LITELLM_MASTER_KEY` (accés total a LiteLLM: crear/revocar claus, `/ui`, despesa de tothom) en Open WebUI, scripts d'usuari final ni automatitzacions. Només en `scripts/litellm-create-key.sh`, en loopback. Cada usuari o aplicació ha de tindre la seua clau virtual pròpia.
 - `LITELLM_SALT_KEY` s'ha de fixar en `.env` i no canviar-la mai sense motiu: xifra en PostgreSQL les claus de proveïdor que guarda LiteLLM.
-- Els contenidors s'executen sense privilegis ni capacitats Linux addicionals (`APP_UID`/`APP_GID`); no revertir això per conveniència. `litellm-database` encara no s'ha endurit igual (sense `read_only`/`user:` propi): és un gap conegut, documentat en README.md, no una excepció silenciosa.
+- Els contenidors s'executen sense privilegis ni capacitats Linux addicionals (`APP_UID`/`APP_GID`); no revertir això per conveniència. `litellm-database` i `litellm-pgvector` encara no s'han endurit igual (sense `read_only` propi): és un gap conegut, documentat en README.md, no una excepció silenciosa.
+- `litellm-pgvector` reutilitza la base `openwebui` (rol i extensió `vector` ja existents): mai crear-li una base/rol nous sense que t'ho demanen explícitament.
 
 ## Convencions
 
 - Documentació i missatges de commit en català.
 - Commits en estil Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`), verb en present, resum breu.
-- Qualsevol variable nova a `.env.example` ha de portar comentari explicant-ne el propòsit i, si és un secret, com generar-lo (`openssl rand -base64 ...`).
+- Qualsevol variable nova a `.env.example` ha de portar comentari explicant-ne el propòsit i, si és un secret, com generar-lo. Contrasenyes que acaben dins d'una URL de connexió (Postgres): `openssl rand -hex 24`, mai `-base64` (`/`, `+` i `=` trenquen l'anàlisi de la URL a Prisma). Altres secrets: `openssl rand -base64 ...` va bé.
 - Actualitzar `README.md` (i `API_USUARIS.md` si afecta l'API d'usuaris) quan un canvi afecte el desplegament o l'ús.

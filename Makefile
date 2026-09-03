@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: preflight build up down logs ps smoke backup test-vllm test-litellm litellm-create-key clean-data
+.PHONY: preflight build up down logs ps smoke backup test-vllm test-litellm litellm-create-key litellm-register-vectorstore clean-data
 
 preflight:
 	./scripts/preflight.sh
@@ -37,6 +37,9 @@ test-litellm:
 litellm-create-key:
 	@test -n "$(USER)" || (echo "Ús: make litellm-create-key USER=id [BUDGET=usd] [MODELS=m1,m2]" && exit 1)
 	./scripts/litellm-create-key.sh "$(USER)" "$(BUDGET)" "$(MODELS)"
+
+litellm-register-vectorstore:
+	./scripts/litellm-register-vectorstore.sh "$(NAME)"
 
 clean-data:
 	@echo "PERILL: elimina tots els volums nous. Executa manualment: docker compose down -v"

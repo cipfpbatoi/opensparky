@@ -83,7 +83,7 @@ docker compose restart vllm-reasoning
 
 **El model de `vllm-coding`** és `Qwen/Qwen3-Coder-30B-A3B-Instruct` per defecte (ja el tenies baixat via Ollama com `qwen3-coder:30b`); canvia `VLLM_CODING_MODEL` si en vols un altre.
 
-**Migrar una instància d'Open WebUI ja existent (no un desplegament nou).** Open WebUI guarda la configuració de connexions (`openai.*`, `ollama.*`, entre altres) en la taula `config` de la seua base de dades la primera vegada que arranca, i des d'aleshores **ignora les variables d'entorn** del `compose.yaml` per a eixes claus concretes — només les aplica si encara no existeix cap valor guardat. Un contenidor que ja portava temps funcionant amb Ollama (com este desplegament abans de la migració) es queda amb `ollama.base_urls` apuntant a un host que ja no existeix i amb `openai.api_base_urls`/`openai.api_keys` pel connector "OpenAI" per defecte (`https://api.openai.com/v1`, clau buida), en lloc de LiteLLM. Es nota perquè el selector de models d'Open WebUI queda buit encara que `docker compose up` s'haja executat correctament amb els envs nous.
+**Migrar una instància d'Open WebUI ja existent (no un desplegament nou).** Open WebUI guarda la configuració de connexions (`openai.*`, `ollama.*`, `rag.*`, entre altres) en la taula `config` de la seua base de dades la primera vegada que arranca, i des d'aleshores **ignora les variables d'entorn** del `compose.yaml` per a eixes claus concretes — només les aplica si encara no existeix cap valor guardat. Un contenidor que ja portava temps funcionant amb Ollama (com este desplegament abans de la migració) es queda amb `ollama.base_urls` apuntant a un host que ja no existeix, amb `openai.api_base_urls`/`openai.api_keys` pel connector "OpenAI" per defecte (`https://api.openai.com/v1`, clau buida) en lloc de LiteLLM, i amb `rag.embedding_engine=ollama` per als embeddings de la RAG (fitxers/coneixement pujats), també apuntant a Ollama. Es nota perquè el selector de models d'Open WebUI queda buit i la indexació de documents falla, encara que `docker compose up` s'haja executat correctament amb els envs nous.
 
 La solució és corregir eixes files directament (una única vegada per instància migrada, no cada desplegament):
 
@@ -94,6 +94,12 @@ UPDATE config SET value = '[]'::json WHERE key = 'ollama.base_urls';
 UPDATE config SET value = 'true'::json WHERE key = 'openai.enable';
 UPDATE config SET value = '["http://litellm:4000/v1"]'::json WHERE key = 'openai.api_base_urls';
 UPDATE config SET value = '["LA_CLAU_VIRTUAL_D_OPENWEBUI"]'::json WHERE key = 'openai.api_keys';
+-- Mateix problema per als embeddings de la RAG (fitxers/coneixement pujats
+-- a Open WebUI): es queden amb el motor "ollama" apuntant a un host mort.
+UPDATE config SET value = '"openai"'::json WHERE key = 'rag.embedding_engine';
+UPDATE config SET value = '"bge-m3"'::json WHERE key = 'rag.embedding_model';
+UPDATE config SET value = '"http://litellm:4000/v1"'::json WHERE key = 'rag.openai.api_base_url';
+UPDATE config SET value = '"LA_CLAU_VIRTUAL_D_OPENWEBUI"'::json WHERE key = 'rag.openai.api_key';
 EOSQL
 docker compose restart open-webui
 ```
@@ -116,6 +122,47 @@ API key:  la clau virtual generada (sk-...)
 Model:    gpt-oss-120b
 ```
 
+## Magatzem de vectors de LiteLLM (pgvector)
+
+LiteLLM pot exposar la seua pròpia Vector Store API OpenAI-compatible (`/v1/vector_stores/{id}/search`), perquè qualsevol client (OpenCode, scripts) puga fer RAG sense passar per Open WebUI. No és el mateix magatzem que la RAG interna d'Open WebUI (fitxers pujats des de la UI) — són dos usos diferents de la mateixa infraestructura pgvector.
+
+**Arquitectura:** `litellm-pgvector` (connector no oficial de BerriAI, es construeix des del codi font fixat a un commit) reutilitza la base **`openwebui`** existent (taules pròpies `vector_stores`/`embeddings`, sense col·lisió) i genera els embeddings cridant de nou a LiteLLM amb bge-m3, amb una clau virtual restringida a eixe model.
+
+```text
+client ──/v1/vector_stores/{id}/search──▶ litellm ──pg_vector──▶ litellm-pgvector ──openai/bge-m3──▶ litellm ──▶ vllm-embeddings
+                                                                        │
+                                                                  postgres:openwebui (taules vector_stores/embeddings)
+```
+
+**Problemes reals trobats i resolts (2026-09-03), per si es torna a desplegar de zero:**
+
+1. **`vector_store_registry` en `config.yaml` no funciona.** És una issue oberta i coneguda de LiteLLM ([BerriAI/litellm#25947](https://github.com/BerriAI/litellm/issues/25947)) en la imatge `litellm-database:main-stable`: la secció es llig bé del YAML, però LiteLLM no l'aplica en arrancar (`vector_store_id is required..., got vector_store_id=None`, encara que hi estiga). Per això `litellm/config.yaml` no en declara cap i el registre es fa en canvi via l'API de gestió (`POST /vector_store/new`), que sí funciona i persisteix en la base de dades de LiteLLM.
+2. **L'ID del magatzem el genera SEMPRE el connector** (UUID), no es pot triar un nom propi com `pgvector-bge-m3` per a fer-hi cerques — eixe nom només val com a etiqueta (`vector_store_name`) en el registre de LiteLLM. `scripts/litellm-register-vectorstore.sh` fa els dos passos (crear al connector, registrar l'UUID resultant a LiteLLM) automàticament.
+3. **`EMBEDDING__MODEL` necessita el prefix `openai/`** (`openai/bge-m3`, no `bge-m3` a soles): el connector crida el SDK Python de LiteLLM directament (`litellm.aembedding(model=...)`), que necessita eixe prefix per a saber que ha de parlar el protocol OpenAI contra `EMBEDDING__BASE_URL` — sense ell falla amb `LLM Provider NOT provided`.
+4. **La contrasenya de Postgres amb `/` o `+` trenca Prisma** (`invalid port number in database URL`), igual que amb `LITELLM_POSTGRES_PASSWORD` (vegeu més avall) — però ací és `POSTGRES_PASSWORD`, una credencial ja en ús per Open WebUI en producció, que no convé rotar només per això. La imatge codifica la contrasenya per URL en arrancar (`containers/litellm-pgvector.Dockerfile`), no cal tocar cap contrasenya existent.
+5. **`prisma generate` (client Python) baixa el motor a `$HOME/.cache/prisma-python/`**, no dins de `site-packages`: cal fixar `HOME` a un directori de l'usuari no-root *abans* de generar, o l'usuari no-root rep "Permission denied" en arrancar (la cau quedaria sota `/root`, il·legible).
+
+**Ús** (amb una clau virtual de LiteLLM, mai la mestra):
+
+```bash
+curl https://api.spark-6169.cipfpbatoi.lan/v1/vector_stores/EL_UUID/search \
+  -H 'Authorization: Bearer sk-CANVIA_ACI' \
+  -H 'Content-Type: application/json' \
+  -d '{"query": "text a cercar"}'
+```
+
+Inserir contingut requereix l'embedding ja calculat (el connector no l'accepta en text pla per a inserir, només per a cercar) — via LiteLLM i després el connector directament (loopback, `LITELLM_PGVECTOR_PORT`):
+
+```bash
+VEC=$(curl -s https://api.spark-6169.cipfpbatoi.lan/v1/embeddings \
+  -H 'Authorization: Bearer sk-CANVIA_ACI' -H 'Content-Type: application/json' \
+  -d '{"model":"bge-m3","input":"text a indexar"}' \
+  | python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin)['data'][0]['embedding']))")
+curl "http://127.0.0.1:${LITELLM_PGVECTOR_PORT:-8010}/v1/vector_stores/EL_UUID/embeddings" \
+  -H "Authorization: Bearer ${LITELLM_PGVECTOR_SERVER_API_KEY}" -H 'Content-Type: application/json' \
+  -d "{\"content\":\"text a indexar\",\"embedding\":${VEC}}"
+```
+
 ## Desplegament
 
 ### 1. Preparar `.env`
@@ -135,17 +182,18 @@ WEBUI_URL=https://spark-6169.cipfpbatoi.lan
 LITELLM_URL=https://api.spark-6169.cipfpbatoi.lan
 WEBUI_ADMIN_EMAIL=correu-administrador
 WEBUI_ADMIN_PASSWORD=contrasenya-llarga-i-unica
-POSTGRES_PASSWORD=...              # openssl rand -base64 36
-LITELLM_POSTGRES_PASSWORD=...      # openssl rand -base64 36
+POSTGRES_PASSWORD=...              # openssl rand -hex 24
+LITELLM_POSTGRES_PASSWORD=...      # openssl rand -hex 24
 LITELLM_MASTER_KEY=...             # echo "sk-$(openssl rand -hex 32)"
 LITELLM_SALT_KEY=...               # openssl rand -base64 48
 VLLM_EMBEDDINGS_API_KEY=...        # echo "sk-$(openssl rand -hex 32)"
 VLLM_REASONING_API_KEY=...         # echo "sk-$(openssl rand -hex 32)"
 VLLM_CODING_API_KEY=...            # echo "sk-$(openssl rand -hex 32)", només si actives el perfil coding
 VLLM_CODING_MODEL=...              # confirma el model, vegeu secció anterior
+LITELLM_PGVECTOR_SERVER_API_KEY=...  # echo "sk-$(openssl rand -hex 32)", només si vols el magatzem de vectors
 ```
 
-`OPENWEBUI_LITELLM_API_KEY` es genera més avant (pas 4): deixa el placeholder de moment.
+`OPENWEBUI_LITELLM_API_KEY` (pas 4) i `LITELLM_PGVECTOR_EMBEDDING_API_KEY` (pas 6) es generen més avant: deixa els placeholders de moment.
 
 ### 2. Validar la DGX
 
@@ -182,7 +230,23 @@ Per a proves locals amb Tika i cada vLLM accessibles des de localhost:
 docker compose -f compose.yaml -f compose.dev.yaml up -d
 ```
 
-### 6. Activar el model de programació (opcional)
+### 6. Magatzem de vectors de LiteLLM (opcional)
+
+```bash
+docker compose up -d --build litellm-pgvector
+./scripts/litellm-create-key.sh litellm-pgvector-service 0 bge-m3
+```
+
+Copia el `key` de la resposta a `LITELLM_PGVECTOR_EMBEDDING_API_KEY` en `.env`, aplica-ho i registra el magatzem:
+
+```bash
+docker compose up -d litellm-pgvector
+./scripts/litellm-register-vectorstore.sh
+```
+
+Anota el `vector_store_id` (UUID) que imprimeix: cal per a `/v1/vector_stores/{id}/search`. Detalls en la secció següent.
+
+### 7. Activar el model de programació (opcional)
 
 ```bash
 docker compose --profile coding up -d --build vllm-coding
@@ -194,7 +258,7 @@ Després, descomenta el bloc `coding-model` en `litellm/config.yaml` i:
 docker compose up -d litellm
 ```
 
-### 7. Comprovar
+### 8. Comprovar
 
 ```bash
 ./scripts/smoke-test.sh
