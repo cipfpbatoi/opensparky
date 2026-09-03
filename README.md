@@ -83,6 +83,39 @@ docker compose restart vllm-reasoning
 
 **El model de `vllm-coding`** és `Qwen/Qwen3-Coder-30B-A3B-Instruct` per defecte (ja el tenies baixat via Ollama com `qwen3-coder:30b`); canvia `VLLM_CODING_MODEL` si en vols un altre.
 
+**Migrar una instància d'Open WebUI ja existent (no un desplegament nou).** Open WebUI guarda la configuració de connexions (`openai.*`, `ollama.*`, entre altres) en la taula `config` de la seua base de dades la primera vegada que arranca, i des d'aleshores **ignora les variables d'entorn** del `compose.yaml` per a eixes claus concretes — només les aplica si encara no existeix cap valor guardat. Un contenidor que ja portava temps funcionant amb Ollama (com este desplegament abans de la migració) es queda amb `ollama.base_urls` apuntant a un host que ja no existeix i amb `openai.api_base_urls`/`openai.api_keys` pel connector "OpenAI" per defecte (`https://api.openai.com/v1`, clau buida), en lloc de LiteLLM. Es nota perquè el selector de models d'Open WebUI queda buit encara que `docker compose up` s'haja executat correctament amb els envs nous.
+
+La solució és corregir eixes files directament (una única vegada per instància migrada, no cada desplegament):
+
+```bash
+docker compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<'EOSQL'
+UPDATE config SET value = 'false'::json WHERE key = 'ollama.enable';
+UPDATE config SET value = '[]'::json WHERE key = 'ollama.base_urls';
+UPDATE config SET value = 'true'::json WHERE key = 'openai.enable';
+UPDATE config SET value = '["http://litellm:4000/v1"]'::json WHERE key = 'openai.api_base_urls';
+UPDATE config SET value = '["LA_CLAU_VIRTUAL_D_OPENWEBUI"]'::json WHERE key = 'openai.api_keys';
+EOSQL
+docker compose restart open-webui
+```
+
+Un desplegament **nou** (volum `dgx_openwebui_data`/base de dades buits) no pateix açò: aplica directament els valors de `compose.yaml` en el primer arrancada.
+
+## Clients externs (OpenCode i altres eines OpenAI-compatibles)
+
+Qualsevol eina que parle el protocol OpenAI (OpenCode, scripts, IDEs) s'ha de connectar a LiteLLM, mai a Open WebUI ni directament a un `vllm-*`. Crea-li una clau pròpia, restringida als models que necessita:
+
+```bash
+./scripts/litellm-create-key.sh opencode-local 0 gpt-oss-120b
+```
+
+Configuració OpenAI-compatible per a l'eina:
+
+```text
+Base URL: https://api.spark-6169.cipfpbatoi.lan/v1
+API key:  la clau virtual generada (sk-...)
+Model:    gpt-oss-120b
+```
+
 ## Desplegament
 
 ### 1. Preparar `.env`
