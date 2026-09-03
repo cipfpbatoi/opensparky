@@ -152,8 +152,9 @@ La solució definitiva no és una convenció ("aneu amb compte", "useu un esquem
 3. **`EMBEDDING__MODEL` necessita el prefix `openai/`** (`openai/bge-m3`, no `bge-m3` a soles): el connector crida el SDK Python de LiteLLM directament (`litellm.aembedding(model=...)`), que necessita eixe prefix per a saber que ha de parlar el protocol OpenAI contra `EMBEDDING__BASE_URL` — sense ell falla amb `LLM Provider NOT provided`.
 4. **`prisma generate` (client Python) baixa el motor a `$HOME/.cache/prisma-python/`**, no dins de `site-packages`: cal fixar `HOME` a un directori de l'usuari no-root *abans* de generar, o l'usuari no-root rep "Permission denied" en arrancar (la cau quedaria sota `/root`, il·legible).
 5. **Crear un esquema nou requereix el privilegi `CREATE` a nivell de base de dades**, que expressament NO es concedeix al rol `litellm_pgvector` (mínim privilegi): l'esquema el crea sempre `postgres-init/03-create-litellm-pgvector-role.sh` (font única de veritat), no el propi contenidor en arrancar.
-6. **El tipus `vector` (de l'extensió, creada en `public`) no és visible des d'un esquema aïllat.** `?schema=` en `DATABASE_URL` és imprescindible (sense ell, Prisma assumeix `public` per defecte, com es va comprovar directament amb l'intent que l'incident de dalt va aturar), però **sobreescriu tot el `search_path` de la connexió**, deixant `public` fora — ni `prisma db push` (columnes `vector(1024)`) ni les consultes pròpies del connector (`::vector` sense qualificar) troben el tipus. Solució en dos nivells: l'esquema Prisma es pedaça amb el tipus qualificat (`public.vector(1024)`, per a `db push`), i `main.py` es pedaça (`containers/litellm-pgvector-fix-search-path.py`) per ampliar el `search_path` de cada connexió (`litellm_pgvector, public`) just en connectar, per a les consultes en temps real.
-7. **La contrasenya de Postgres amb `/` o `+` trenca Prisma** (`invalid port number in database URL`), igual que amb `LITELLM_POSTGRES_PASSWORD` (vegeu més avall). La imatge codifica la contrasenya per URL en arrancar (`containers/litellm-pgvector.Dockerfile`).
+6. **El tipus `vector` (de l'extensió, creada en `public`) no és visible des d'un esquema aïllat.** `?schema=` en `DATABASE_URL` és imprescindible per a `prisma db push` (sense ell, Prisma assumeix `public` per defecte, com es va comprovar directament amb l'intent que l'incident de dalt va aturar), però **sobreescriu tot el `search_path` de la connexió**, deixant `public` fora. Per a `db push`, l'esquema Prisma es pedaça amb el tipus qualificat (`public.vector(1024)`). Per a l'**aplicació** (uvicorn), `containers/litellm-pgvector-entrypoint.py` fa servir una `DATABASE_URL` **diferent, sense `?schema=`**: Prisma obri un grup de connexions, i cadascuna torna a aplicar `?schema=` pel seu compte (sense `public`) — un pedaç de "just en connectar" (una sola connexió) fallava de forma intermitent segons quina connexió del grup atenguera la petició. Sense `?schema=`, cada connexió nova parteix del `search_path` per defecte que ja té fixat el **rol** (`postgres-init/03-...`, `litellm_pgvector, public`), que s'aplica sol a totes.
+7. **La contrasenya de Postgres amb `/` o `+` trenca Prisma** (`invalid port number in database URL`), igual que amb `LITELLM_POSTGRES_PASSWORD` (vegeu més avall). La imatge codifica la contrasenya per URL en arrancar.
+8. **`/v1/files` de LiteLLM no serveix per a pujar documents a este magatzem.** És una ruta genèrica per a proveïdors amb Files API nativa (OpenAI, Azure, Vertex, via `files_settings` en `config.yaml`) — el connector `pg_vector` no en té cap. Per indexar un fitxer sencer, `scripts/litellm-vectorstore-add-file.py` el trosseja, calcula els embeddings amb bge-m3 i els insereix per lots directament al connector (vegeu "Ús" més avall).
 
 **Ús** (amb una clau virtual de LiteLLM, mai la mestra):
 
@@ -164,7 +165,13 @@ curl https://api.spark-6169.cipfpbatoi.lan/v1/vector_stores/EL_UUID/search \
   -d '{"query": "text a cercar"}'
 ```
 
-Inserir contingut requereix l'embedding ja calculat (el connector no l'accepta en text pla per a inserir, només per a cercar) — via LiteLLM i després el connector directament (loopback, `LITELLM_PGVECTOR_PORT`):
+**Indexar un fitxer de text sencer** (el trosseja per paràgrafs, calcula els embeddings amb bge-m3 i els insereix per lots):
+
+```bash
+LITELLM_API_KEY=sk-CANVIA_ACI ./scripts/litellm-vectorstore-add-file.py document.txt EL_UUID
+```
+
+Inserir un tros solt requereix l'embedding ja calculat (el connector no accepta text pla per a inserir, només per a cercar) — via LiteLLM i després el connector directament (loopback, `LITELLM_PGVECTOR_PORT`):
 
 ```bash
 VEC=$(curl -s https://api.spark-6169.cipfpbatoi.lan/v1/embeddings \

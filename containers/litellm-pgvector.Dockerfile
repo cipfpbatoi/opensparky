@@ -37,18 +37,6 @@ RUN grep -q "vector(1536)" prisma/schema.prisma \
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-# "?schema=" en DATABASE_URL fixa el search_path de TOTA la connexió a
-# NOMÉS eixe esquema (necessari perquè "prisma db push" no toque 'public',
-# vegeu el CMD), però l'aplicació fa consultes pròpies amb "::vector" sense
-# qualificar que llavors no troben el tipus (el crea l'extensió en
-# 'public'). fix-search-path.py amplia el search_path d'eixa mateixa
-# sessió just en connectar, perquè busque també en 'public' — sense tocar
-# cap consulta interna del connector.
-COPY containers/litellm-pgvector-fix-search-path.py /tmp/fix-search-path.py
-RUN python3 /tmp/fix-search-path.py main.py \
-    && rm /tmp/fix-search-path.py \
-    && grep -q 'SET search_path TO' main.py
-
 # "prisma generate" (client Python) escriu el schema generat dins de
 # site-packages (propietat de root en este punt: ha d'executar-se abans de
 # canviar a l'usuari no-root) i, a més, baixa el binari del motor Prisma a
@@ -100,10 +88,25 @@ EXPOSE 8000
 # POSTGRES_PASSWORD, generada abans que este connector existira) sense
 # haver-la de canviar.
 #
-# "?schema=" és IMPRESCINDIBLE: sense ell, Prisma assumeix 'public' com a
-# esquema (independentment del search_path real de la connexió/rol) — ho
-# vam comprovar en directe: sense "?schema=", "prisma db push" va intentar
-# tocar taules reals d'Open WebUI en 'public' (access_grant) i només el
-# fet que el rol NO hi té privilegis ho va evitar ("permission denied").
-# Eixe rebuig és la xarxa de seguretat real, no una convenció de client.
-CMD ["sh", "-c", "export DATABASE_URL=$(python3 -c \"import os, urllib.parse as u; print('postgresql://' + u.quote(os.environ['PG_USER'], safe='') + ':' + u.quote(os.environ['PG_PASSWORD'], safe='') + '@' + os.environ['PG_HOST'] + ':' + os.environ['PG_PORT'] + '/' + os.environ['PG_DATABASE'] + '?schema=' + u.quote(os.environ['PG_SCHEMA'], safe=''))\") && prisma db push --accept-data-loss --skip-generate && exec uvicorn main:app --host 0.0.0.0 --port 8000"]
+# DOS DATABASE_URL diferents (vegeu docker-entrypoint.py), no una:
+#
+# - Per a "prisma db push": AMB "?schema=". Imprescindible — sense ell,
+#   Prisma assumeix 'public' com a esquema (independentment del search_path
+#   real de la connexió/rol). Comprovat en directe: sense "?schema=",
+#   "prisma db push" va intentar tocar taules reals d'Open WebUI en
+#   'public' (access_grant) i només el fet que el rol NO hi té privilegis
+#   ho va evitar ("permission denied") — eixe rebuig és la xarxa de
+#   seguretat real, no una convenció de client.
+#
+# - Per a l'aplicació (uvicorn/main.py): SENSE "?schema=". "?schema="
+#   fixa el search_path NOMÉS de la connexió que l'estableix — Prisma obri
+#   un grup de connexions per a l'aplicació, i cadascuna el torna a aplicar
+#   pel seu compte (només 'litellm_pgvector', sense 'public'), fent que les
+#   consultes internes del connector amb "::vector" sense qualificar
+#   fallen de forma intermitent segons quina connexió del grup atenga la
+#   petició (comprovat en directe). Sense "?schema=" en la URL de
+#   l'aplicació, cada connexió nova parteix del search_path per defecte que
+#   ja té fixat el ROL (postgres-init/03-..., "litellm_pgvector, public")
+#   — s'aplica sol a totes, sense dependre de cap connexió concreta.
+COPY --chown=${APP_UID}:${APP_GID} containers/litellm-pgvector-entrypoint.py /app/docker-entrypoint.py
+CMD ["python3", "/app/docker-entrypoint.py"]
