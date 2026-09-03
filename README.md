@@ -176,6 +176,8 @@ curl "http://127.0.0.1:${LITELLM_PGVECTOR_PORT:-8010}/v1/vector_stores/EL_UUID/e
   -d "{\"content\":\"text a indexar\",\"embedding\":${VEC}}"
 ```
 
+**Privacitat entre magatzems (comprovat 2026-09-03): només és separació lògica, no forçada.** Un magatzem propi per equip (`./scripts/litellm-register-vectorstore.sh nom-equip`) separa el contingut, però **qualsevol clau vàlida de LiteLLM pot cercar en qualsevol magatzem**: registrar-lo (`POST /vector_store/new`) només ho pot fer l'admin, i el `team_id` del magatzem sempre acaba buit — per codi, un magatzem sense `team_id` és accessible per a totes les claus, sense excepció. Per a documents que necessiten control d'accés real entre persones (per exemple, informació sensible d'alumnat), usa el sistema de Grups + Knowledge d'Open WebUI (accés per usuari autenticat), no els magatzems de vectors de LiteLLM.
+
 ## Desplegament
 
 ### 1. Preparar `.env`
