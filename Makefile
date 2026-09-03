@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: preflight build up down logs ps smoke backup test-vllm test-litellm litellm-create-key litellm-register-vectorstore clean-data
+.PHONY: preflight build up down logs ps smoke backup test-vllm test-litellm litellm-create-key litellm-register-vectorstore openwebui-ensure-rag-config clean-data
 
 preflight:
 	./scripts/preflight.sh
@@ -40,6 +40,9 @@ litellm-create-key:
 
 litellm-register-vectorstore:
 	./scripts/litellm-register-vectorstore.sh "$(NAME)"
+
+openwebui-ensure-rag-config:
+	./scripts/openwebui-ensure-rag-config.sh
 
 clean-data:
 	@echo "PERILL: elimina tots els volums nous. Executa manualment: docker compose down -v"

@@ -416,10 +416,10 @@ services:
       context: .
       dockerfile: containers/openwebui.Dockerfile
       args:
-        OPEN_WEBUI_VERSION: ${OPEN_WEBUI_VERSION:-v0.11.0}
+        OPEN_WEBUI_VERSION: ${OPEN_WEBUI_VERSION:-v0.11.3}
         APP_UID: ${APP_UID:-10001}
         APP_GID: ${APP_GID:-10001}
-    image: local/dgx-openwebui:${OPEN_WEBUI_VERSION:-v0.11.0}-arm64
+    image: local/dgx-openwebui:${OPEN_WEBUI_VERSION:-v0.11.3}-arm64
     platform: linux/arm64
     container_name: dgx-openwebui
     restart: unless-stopped

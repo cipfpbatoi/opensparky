@@ -14,6 +14,7 @@ make test-vllm SERVICE=embeddings|reasoning|coding   # prova un vLLM directament
 make test-litellm API_KEY=sk-... MODEL=gpt-oss-120b  # prova l'API de LiteLLM
 make litellm-create-key USER=id [BUDGET=usd] [MODELS=m1,m2]
 make litellm-register-vectorstore   # magatzem de vectors LiteLLM+pgvector, opcional
+make openwebui-ensure-rag-config    # torna a aplicar bge-m3/LiteLLM a la RAG si cal (post-actualització)
 make backup
 docker compose config --quiet   # valida compose.yaml (el que fa CI)
 bash -n scripts/*.sh            # valida sintaxi dels scripts (el que fa CI)

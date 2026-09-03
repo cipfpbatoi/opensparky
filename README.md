@@ -106,6 +106,12 @@ docker compose restart open-webui
 
 Un desplegament **nou** (volum `dgx_openwebui_data`/base de dades buits) no pateix açò: aplica directament els valors de `compose.yaml` en el primer arrancada.
 
+**⚠️ Torna a comprovar-ho després de CADA actualització d'Open WebUI.** Comprovat en actualitzar de v0.11.0 a v0.11.3 (2026-09-03): la migració va "re-sembrar" `rag.embedding_engine`, `rag.embedding_model`, `rag.openai.api_base_url` i `rag.openai.api_key` als valors de fàbrica (log: `Seeded 4 new config defaults`), esborrant la configuració de bge-m3/LiteLLM sense avís — no és exclusiu d'esta migració concreta, qualsevol versió futura pot re-sembrar claus de `config` de la mateixa manera. Després de qualsevol `docker compose up -d --build open-webui` amb `OPEN_WEBUI_VERSION` nova, executa (idempotent, no fa res si ja és correcte):
+
+```bash
+./scripts/openwebui-ensure-rag-config.sh
+```
+
 ## Clients externs (OpenCode i altres eines OpenAI-compatibles)
 
 Qualsevol eina que parle el protocol OpenAI (OpenCode, scripts, IDEs) s'ha de connectar a LiteLLM, mai a Open WebUI ni directament a un `vllm-*`. Crea-li una clau pròpia, restringida als models que necessita:
@@ -286,6 +292,7 @@ docker compose up -d litellm
 ./scripts/smoke-test.sh
 curl http://127.0.0.1:4000/health/liveliness
 curl http://127.0.0.1:3000/health
+./scripts/openwebui-ensure-rag-config.sh
 ```
 
 ## Gestió d'usuaris i claus (LiteLLM)
