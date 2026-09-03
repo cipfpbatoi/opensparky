@@ -6,3 +6,17 @@ services:
       # Exposició opcional per a proves locals.
       # En producció, no publicar cap port (comentat).
       - "127.0.0.1:${TIKA_HOST_PORT:-9998}:9998"
+
+  # Publicació opcional en loopback per a provar cada vLLM directament,
+  # sense passar per LiteLLM. En producció, no publicar estos ports.
+  vllm-embeddings:
+    ports:
+      - "127.0.0.1:${VLLM_EMBEDDINGS_HOST_PORT:-8001}:8000"
+
+  vllm-reasoning:
+    ports:
+      - "127.0.0.1:${VLLM_REASONING_HOST_PORT:-8002}:8000"
+
+  vllm-coding:
+    ports:
+      - "127.0.0.1:${VLLM_CODING_HOST_PORT:-8003}:8000"

@@ -5,3 +5,15 @@ spark-6169.cipfpbatoi.lan {
 
 	reverse_proxy open-webui:8080
 }
+
+# API de LiteLLM (OpenAI-compatible) i la seua UI d'administració (/ui).
+# Subdomini propi perquè totes dues fan servir rutes absolutes assumint que
+# s'executen en l'arrel: sota un subcamí compartit amb Open WebUI (p. ex.
+# /api/) la UI d'administració deixaria de funcionar.
+api.spark-6169.cipfpbatoi.lan {
+	tls internal
+
+	encode zstd gzip
+
+	reverse_proxy litellm:4000
+}

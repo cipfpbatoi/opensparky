@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: preflight build up down logs ps smoke backup pull-model test-ollama test-api clean-data
+.PHONY: preflight build up down logs ps smoke backup test-vllm test-litellm litellm-create-key clean-data
 
 preflight:
 	./scripts/preflight.sh
@@ -26,16 +26,17 @@ smoke:
 backup:
 	./scripts/backup.sh
 
-pull-model:
-	@test -n "$(MODEL)" || (echo "Ús: make pull-model MODEL=nom:model" && exit 1)
-	docker compose exec ollama ollama pull "$(MODEL)"
+test-vllm:
+	@test -n "$(SERVICE)" || (echo "Ús: make test-vllm SERVICE=embeddings|reasoning|coding" && exit 1)
+	./scripts/test-vllm.sh "$(SERVICE)"
 
-test-ollama:
-	./scripts/test-local-ollama.sh "$(MODEL)"
+test-litellm:
+	@test -n "$(API_KEY)" || (echo "Ús: make test-litellm API_KEY=sk-... [MODEL=nom]" && exit 1)
+	LITELLM_API_KEY="$(API_KEY)" ./scripts/test-litellm-api.sh "$(MODEL)"
 
-test-api:
-	@test -n "$(API_KEY)" || (echo "Ús: make test-api API_KEY=sk-... [MODEL=nom:model]" && exit 1)
-	OPENWEBUI_API_KEY="$(API_KEY)" ./scripts/test-openwebui-api.sh "$(MODEL)"
+litellm-create-key:
+	@test -n "$(USER)" || (echo "Ús: make litellm-create-key USER=id [BUDGET=usd] [MODELS=m1,m2]" && exit 1)
+	./scripts/litellm-create-key.sh "$(USER)" "$(BUDGET)" "$(MODELS)"
 
 clean-data:
-	@echo "PERILL: elimina els dos volums nous. Executa manualment: docker compose down -v"
+	@echo "PERILL: elimina tots els volums nous. Executa manualment: docker compose down -v"

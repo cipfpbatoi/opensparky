@@ -25,7 +25,7 @@ set -a
 # shellcheck disable=SC1091
 source .env
 set +a
-for port in "${OLLAMA_PORT:-11434}" "${OPEN_WEBUI_PORT:-3000}"; do
+for port in "${OPEN_WEBUI_PORT:-3000}" "${LITELLM_PORT:-4000}"; do
   if ss -ltnH "sport = :${port}" | grep -q .; then
     echo "AVÍS: el port ${port} ja està ocupat." >&2
   fi

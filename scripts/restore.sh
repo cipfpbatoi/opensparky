@@ -30,7 +30,6 @@ restore_one() {
     sh -c "rm -rf /target/* /target/.[!.]* /target/..?* 2>/dev/null || true; tar -xzf /backup/${logical}.tar.gz -C /target"
 }
 
-restore_one ollama_data dgx_ollama_data
 restore_one openwebui_data dgx_openwebui_data
 restore_one postgres_data dgx_postgres_data
 

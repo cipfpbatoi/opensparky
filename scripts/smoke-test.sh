@@ -9,15 +9,15 @@ set -a
 source .env
 set +a
 
-OLLAMA_PORT="${OLLAMA_PORT:-11434}"
 OPEN_WEBUI_PORT="${OPEN_WEBUI_PORT:-3000}"
+LITELLM_PORT="${LITELLM_PORT:-4000}"
 
 echo "Estat dels contenidors:"
 docker compose ps
 
 echo
-echo "Ollama local:"
-curl --fail --silent --show-error "http://127.0.0.1:${OLLAMA_PORT}/api/tags" | head -c 1000
+echo "Salut de LiteLLM:"
+curl --fail --silent --show-error "http://127.0.0.1:${LITELLM_PORT}/health/liveliness"
 echo
 
 echo

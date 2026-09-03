@@ -1,0 +1,37 @@
+# Configuració de LiteLLM. Font única de veritat dels models exposats:
+# general_settings.store_model_in_db és false, així que la UI/API de LiteLLM
+# NO pot afegir ni modificar models, només claus, usuaris i pressupostos
+# (això sí es guarda en PostgreSQL). Per a canviar un model: edita este
+# fitxer i .env, després `docker compose up -d litellm` (no cal reconstruir
+# cap imatge, el fitxer es munta per bind mount).
+#
+# No hi ha cap secret en este fitxer: les claus es llegeixen sempre de
+# variables d'entorn (os.environ/...) definides en .env.
+
+model_list:
+  - model_name: bge-m3
+    litellm_params:
+      model: openai/bge-m3
+      api_base: http://vllm-embeddings:8000/v1
+      api_key: os.environ/VLLM_EMBEDDINGS_API_KEY
+
+  - model_name: gpt-oss-120b
+    litellm_params:
+      model: openai/gpt-oss-120b
+      api_base: http://vllm-reasoning:8000/v1
+      api_key: os.environ/VLLM_REASONING_API_KEY
+
+  # Model de programació/ús general. Descomenta quan el servei vllm-coding
+  # estiga desplegat (`docker compose --profile coding up -d`, vegeu README.md).
+  # - model_name: coding-model
+  #   litellm_params:
+  #     model: openai/coding-model
+  #     api_base: http://vllm-coding:8000/v1
+  #     api_key: os.environ/VLLM_CODING_API_KEY
+
+general_settings:
+  store_model_in_db: false
+
+litellm_settings:
+  drop_params: true
+  request_timeout: 600

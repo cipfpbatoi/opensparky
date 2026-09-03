@@ -1,37 +1,38 @@
 name: dgx-ai-pilot
 
 services:
-  ollama:
+  vllm-embeddings:
     build:
       context: .
-      dockerfile: containers/ollama.Dockerfile
+      dockerfile: containers/vllm.Dockerfile
       args:
-        OLLAMA_VERSION: ${OLLAMA_VERSION:-0.31.1}
+        VLLM_IMAGE: ${VLLM_IMAGE:-vllm/vllm-openai}
+        VLLM_VERSION: ${VLLM_VERSION:?Defineix VLLM_VERSION en el fitxer .env}
         APP_UID: ${APP_UID:-10001}
         APP_GID: ${APP_GID:-10001}
-    image: local/dgx-ollama:${OLLAMA_VERSION:-0.31.1}-arm64
+    image: local/dgx-vllm:${VLLM_VERSION:-latest}-arm64
     platform: linux/arm64
-    container_name: dgx-ollama
+    container_name: dgx-vllm-embeddings
     restart: unless-stopped
     init: true
     gpus: all
-    ports:
-      # API directa d'Ollama només en el loopback de la DGX.
-      # No és accessible des de la LAN i no incorpora autenticació.
-      - "127.0.0.1:${OLLAMA_PORT:-11434}:11434"
+    command:
+      - --model=${VLLM_EMBEDDINGS_MODEL:-BAAI/bge-m3}
+      - --served-model-name=bge-m3
+      - --port=8000
+      - --api-key=${VLLM_EMBEDDINGS_API_KEY:?Defineix VLLM_EMBEDDINGS_API_KEY en el fitxer .env}
+      - --gpu-memory-utilization=${VLLM_EMBEDDINGS_GPU_MEM_UTIL:-0.10}
+      - --max-model-len=${VLLM_EMBEDDINGS_MAX_MODEL_LEN:-8192}
+      # Un model d'embeddings és tan xicotet que la compilació CUDA-graph
+      # (torch.compile) triga més que no estalvia; --enforce-eager fa que
+      # arranque en segons en lloc de quedar-se molts minuts compilant.
+      - --enforce-eager
     environment:
-      # Ha d'escoltar en totes les interfícies DINS del contenidor perquè
-      # Open WebUI i la publicació Docker en localhost puguen connectar-se.
-      OLLAMA_HOST: 0.0.0.0:11434
-      OLLAMA_MODELS: /home/ollama/.ollama/models
-      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-10m}
-      OLLAMA_MAX_LOADED_MODELS: ${OLLAMA_MAX_LOADED_MODELS:-1}
-      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-1}
-      OLLAMA_MAX_QUEUE: ${OLLAMA_MAX_QUEUE:-32}
-      OLLAMA_FLASH_ATTENTION: ${OLLAMA_FLASH_ATTENTION:-1}
-      OLLAMA_KV_CACHE_TYPE: ${OLLAMA_KV_CACHE_TYPE:-q8_0}
+      HF_TOKEN: ${HF_TOKEN:-}
+      VLLM_NO_USAGE_STATS: "1"
+      DO_NOT_TRACK: "1"
     volumes:
-      - ollama_data:/home/ollama/.ollama
+      - vllm_embeddings_cache:/home/vllm
     networks:
       - ai_backend
     security_opt:
@@ -42,14 +43,137 @@ services:
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=2g,mode=1777
     pids_limit: 1024
-    cpus: ${OLLAMA_CPUS:-16}
-    mem_limit: ${OLLAMA_MEMORY_LIMIT:-100g}
+    cpus: ${VLLM_EMBEDDINGS_CPUS:-4}
+    mem_limit: ${VLLM_EMBEDDINGS_MEMORY_LIMIT:-16g}
     healthcheck:
-      test: ["CMD", "ollama", "list"]
+      test:
+        - CMD-SHELL
+        - >-
+          python3 -c "import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 45s
+      start_period: 120s
+
+  vllm-reasoning:
+    build:
+      context: .
+      dockerfile: containers/vllm.Dockerfile
+      args:
+        VLLM_IMAGE: ${VLLM_IMAGE:-vllm/vllm-openai}
+        VLLM_VERSION: ${VLLM_VERSION:?Defineix VLLM_VERSION en el fitxer .env}
+        APP_UID: ${APP_UID:-10001}
+        APP_GID: ${APP_GID:-10001}
+    image: local/dgx-vllm:${VLLM_VERSION:-latest}-arm64
+    platform: linux/arm64
+    container_name: dgx-vllm-reasoning
+    restart: unless-stopped
+    init: true
+    gpus: all
+    command:
+      - --model=${VLLM_REASONING_MODEL:-openai/gpt-oss-120b}
+      - --served-model-name=gpt-oss-120b
+      - --port=8000
+      - --api-key=${VLLM_REASONING_API_KEY:?Defineix VLLM_REASONING_API_KEY en el fitxer .env}
+      - --gpu-memory-utilization=${VLLM_REASONING_GPU_MEM_UTIL:-0.65}
+      - --max-model-len=${VLLM_REASONING_MAX_MODEL_LEN:-32768}
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+      VLLM_NO_USAGE_STATS: "1"
+      DO_NOT_TRACK: "1"
+      # gpt-oss usa el format "harmony" d'OpenAI, que el propi paquet
+      # openai_harmony (client Rust) intenta baixar en arrancar des de
+      # openaipublic.blob.core.windows.net — i eixe client falla en molts
+      # entorns (problema conegut, també reportat als playbooks de DGX
+      # Spark) encara que la xarxa funcione bé per altres vies. Es
+      # pre-descarrega el fitxer amb el nom hash (SHA1 de la URL) que
+      # espera la seua caché, dins del volum persistent, per no dependre
+      # d'eixe client en cada arrancada.
+      TIKTOKEN_RS_CACHE_DIR: /home/vllm/.cache/tiktoken-rs-cache
+    volumes:
+      - vllm_reasoning_cache:/home/vllm
+    networks:
+      - ai_backend
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=4g,mode=1777
+    pids_limit: 1024
+    cpus: ${VLLM_REASONING_CPUS:-12}
+    mem_limit: ${VLLM_REASONING_MEMORY_LIMIT:-100g}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          python3 -c "import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      # Un model de 120B pot trigar molts minuts a descarregar-se i carregar-se
+      # la primera vegada. Ajusta si el healthcheck marca "unhealthy" massa prompte.
+      start_period: 900s
+
+  # Model de programació / ús general (Nemotron, Qwen2.5-Coder...). Opcional:
+  # només arranca amb `docker compose --profile coding up -d`. Comparteix GPU
+  # amb vllm-reasoning: comprova que la suma de VLLM_*_GPU_MEM_UTIL no supera
+  # la memòria unificada disponible abans d'activar-lo alhora que el de raonament.
+  vllm-coding:
+    profiles:
+      - coding
+    build:
+      context: .
+      dockerfile: containers/vllm.Dockerfile
+      args:
+        VLLM_IMAGE: ${VLLM_IMAGE:-vllm/vllm-openai}
+        VLLM_VERSION: ${VLLM_VERSION:?Defineix VLLM_VERSION en el fitxer .env}
+        APP_UID: ${APP_UID:-10001}
+        APP_GID: ${APP_GID:-10001}
+    image: local/dgx-vllm:${VLLM_VERSION:-latest}-arm64
+    platform: linux/arm64
+    container_name: dgx-vllm-coding
+    restart: unless-stopped
+    init: true
+    gpus: all
+    command:
+      - --model=${VLLM_CODING_MODEL:?Defineix VLLM_CODING_MODEL en el fitxer .env}
+      - --served-model-name=coding-model
+      - --port=8000
+      - --api-key=${VLLM_CODING_API_KEY:?Defineix VLLM_CODING_API_KEY en el fitxer .env}
+      - --gpu-memory-utilization=${VLLM_CODING_GPU_MEM_UTIL:-0.20}
+      - --max-model-len=${VLLM_CODING_MAX_MODEL_LEN:-32768}
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+      VLLM_NO_USAGE_STATS: "1"
+      DO_NOT_TRACK: "1"
+    volumes:
+      - vllm_coding_cache:/home/vllm
+    networks:
+      - ai_backend
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=4g,mode=1777
+    pids_limit: 1024
+    cpus: ${VLLM_CODING_CPUS:-8}
+    mem_limit: ${VLLM_CODING_MEMORY_LIMIT:-40g}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          python3 -c "import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 600s
 
   postgres:
     image: pgvector/pgvector:${POSTGRES_IMAGE_TAG:-pg16}
@@ -58,13 +182,19 @@ services:
     restart: unless-stopped
     init: true
     environment:
+      # Base i rol d'arrancada del clúster: Open WebUI (usuaris, xats, vectors).
       POSTGRES_DB: ${POSTGRES_DB:-openwebui}
       POSTGRES_USER: ${POSTGRES_USER:-openwebui}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defineix POSTGRES_PASSWORD en el fitxer .env}
       PGDATA: /var/lib/postgresql/data/pgdata
+      # Base i rol propis de LiteLLM (claus, usuaris, pressupostos, logs).
+      # Els crea postgres-init/02-create-litellm-db.sh en el primer arrancada.
+      LITELLM_POSTGRES_DB: ${LITELLM_POSTGRES_DB:-litellm}
+      LITELLM_POSTGRES_USER: ${LITELLM_POSTGRES_USER:-litellm}
+      LITELLM_POSTGRES_PASSWORD: ${LITELLM_POSTGRES_PASSWORD:?Defineix LITELLM_POSTGRES_PASSWORD en el fitxer .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      # S'executa només quan el volum de dades és nou.
+      # S'executen només quan el volum de dades és nou.
       - ./postgres-init:/docker-entrypoint-initdb.d:ro
     networks:
       - ai_backend
@@ -131,6 +261,61 @@ services:
       retries: 5
       start_period: 60s
 
+  litellm:
+    image: ghcr.io/berriai/litellm-database:${LITELLM_VERSION:-main-stable}
+    platform: linux/arm64
+    container_name: dgx-litellm
+    restart: unless-stopped
+    init: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      vllm-embeddings:
+        condition: service_healthy
+      vllm-reasoning:
+        condition: service_healthy
+    ports:
+      # Accés directe en loopback per a administració/proves (claus, /ui),
+      # igual que Ollama/Open WebUI abans. La publicació pública és via Caddy
+      # en api.${LITELLM_HOSTNAME}.
+      - "127.0.0.1:${LITELLM_PORT:-4000}:4000"
+    command:
+      - --config=/app/config.yaml
+      - --port=4000
+    environment:
+      DATABASE_URL: postgresql://${LITELLM_POSTGRES_USER:-litellm}:${LITELLM_POSTGRES_PASSWORD}@postgres:5432/${LITELLM_POSTGRES_DB:-litellm}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?Defineix LITELLM_MASTER_KEY en el fitxer .env}
+      # Xifra les claus de proveïdor guardades en la base de dades. Fixa-la
+      # sempre: si es regenera sola en cada arrancada, es perd l'accés a les
+      # dades ja xifrades.
+      LITELLM_SALT_KEY: ${LITELLM_SALT_KEY:?Defineix LITELLM_SALT_KEY en el fitxer .env}
+      VLLM_EMBEDDINGS_API_KEY: ${VLLM_EMBEDDINGS_API_KEY}
+      VLLM_REASONING_API_KEY: ${VLLM_REASONING_API_KEY}
+      VLLM_CODING_API_KEY: ${VLLM_CODING_API_KEY:-}
+    volumes:
+      - ./litellm/config.yaml:/app/config.yaml:ro
+    networks:
+      - ai_backend
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=1g,mode=1777
+    pids_limit: 512
+    cpus: ${LITELLM_CPUS:-4}
+    mem_limit: ${LITELLM_MEMORY_LIMIT:-4g}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          python3 -c "import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness', timeout=5)"
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
   open-webui:
     build:
       context: .
@@ -145,18 +330,25 @@ services:
     restart: unless-stopped
     init: true
     depends_on:
-      ollama:
+      litellm:
         condition: service_healthy
       postgres:
         condition: service_healthy
       tika:
         condition: service_healthy
     ports:
-      # La interfície i l'API es publiquen només en localhost.
-      # El proxy invers o cloudflared publicarà WEBUI_URL amb HTTPS.
+      # La interfície es publica només en localhost. Caddy publica WEBUI_URL
+      # amb HTTPS.
       - "127.0.0.1:${OPEN_WEBUI_PORT:-3000}:8080"
     environment:
-      OLLAMA_BASE_URL: http://ollama:11434
+      # Open WebUI és ara un client OpenAI-compatible més de LiteLLM: ja no
+      # parla amb Ollama ni gestiona claus de proveïdor pròpies. La clau ha
+      # de ser una clau VIRTUAL de LiteLLM (vegeu scripts/litellm-create-key.sh),
+      # mai LITELLM_MASTER_KEY.
+      ENABLE_OLLAMA_API: "false"
+      ENABLE_OPENAI_API: "true"
+      OPENAI_API_BASE_URLS: http://litellm:4000/v1
+      OPENAI_API_KEYS: ${OPENWEBUI_LITELLM_API_KEY:?Defineix OPENWEBUI_LITELLM_API_KEY en el fitxer .env (clau virtual creada amb scripts/litellm-create-key.sh)}
 
       # Usuaris, xats i base vectorial en el mateix PostgreSQL.
       DATABASE_URL: postgresql://${POSTGRES_USER:-openwebui}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-openwebui}
@@ -167,7 +359,7 @@ services:
       CONTENT_EXTRACTION_ENGINE: tika
       TIKA_SERVER_URL: http://tika:9998
 
-      WEBUI_URL: ${WEBUI_URL:-https://ia-professorat.cipfpbatoi.lan}
+      WEBUI_URL: ${WEBUI_URL:-https://spark-6169.cipfpbatoi.lan}
       WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:?Defineix WEBUI_SECRET_KEY en el fitxer .env}
       WEBUI_AUTH: "true"
       WEBUI_ADMIN_NAME: ${WEBUI_ADMIN_NAME:-Administrador IA}
@@ -184,7 +376,7 @@ services:
       # Open WebUI separa els orígens amb ';', no amb ','. Sense orígens de
       # depuració per defecte: afig-los només en el .env local si cal
       # (vegeu CORS_ALLOW_ORIGIN en .env.example).
-      CORS_ALLOW_ORIGIN: ${CORS_ALLOW_ORIGIN:-${WEBUI_URL:-https://ia-professorat.cipfpbatoi.lan}}
+      CORS_ALLOW_ORIGIN: ${CORS_ALLOW_ORIGIN:-${WEBUI_URL:-https://spark-6169.cipfpbatoi.lan}}
       HSTS: max-age=31536000;includeSubDomains
       XFRAME_OPTIONS: DENY
       XCONTENT_TYPE: nosniff
@@ -194,14 +386,6 @@ services:
       ENABLE_ADMIN_EXPORT: "false"
       BYPASS_MODEL_ACCESS_CONTROL: "false"
       ENABLE_ADMIN_CHAT_ACCESS: "false"
-
-      # API per usuari. Cada clau hereta el rol, grups i accés a models
-      # de la persona que la genera.
-      ENABLE_API_KEYS: "true"
-      USER_PERMISSIONS_FEATURES_API_KEYS: "true"
-      ENABLE_API_KEYS_ENDPOINT_RESTRICTIONS: "true"
-      API_KEYS_ALLOWED_ENDPOINTS: '/api/models,/api/chat/completions,/ollama/api/tags,/ollama/api/chat,/ollama/api/generate,/ollama/api/embed,/ollama/v1/responses'
-      CUSTOM_API_KEY_HEADER: X-OpenWebUI-Key
 
       AIOHTTP_CLIENT_ALLOW_REDIRECTS: "false"
       HOME: /app/backend/data
@@ -232,7 +416,7 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
-  
+
   caddy:
     image: caddy:2.11.4-alpine
     platform: linux/arm64
@@ -242,6 +426,8 @@ services:
 
     depends_on:
       open-webui:
+        condition: service_healthy
+      litellm:
         condition: service_healthy
 
     ports:
@@ -266,12 +452,17 @@ networks:
     driver: bridge
 
 volumes:
-  ollama_data:
-    name: dgx_ollama_data
   openwebui_data:
     name: dgx_openwebui_data
   postgres_data:
     name: dgx_postgres_data
+
+  vllm_embeddings_cache:
+    name: dgx_vllm_embeddings_cache
+  vllm_reasoning_cache:
+    name: dgx_vllm_reasoning_cache
+  vllm_coding_cache:
+    name: dgx_vllm_coding_cache
 
   caddy_data:
     name: dgx_caddy_data
