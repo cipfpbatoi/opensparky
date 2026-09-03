@@ -192,6 +192,13 @@ services:
       LITELLM_POSTGRES_DB: ${LITELLM_POSTGRES_DB:-litellm}
       LITELLM_POSTGRES_USER: ${LITELLM_POSTGRES_USER:-litellm}
       LITELLM_POSTGRES_PASSWORD: ${LITELLM_POSTGRES_PASSWORD:?Defineix LITELLM_POSTGRES_PASSWORD en el fitxer .env}
+      # Rol i esquema propis de litellm-pgvector, DINS de la base 'openwebui'
+      # reutilitzada — però amb privilegis només sobre eixe esquema, mai
+      # sobre 'public'. Els crea postgres-init/03-create-litellm-pgvector-role.sh
+      # en el primer arrancada. Vegeu la nota d'incident real en eixe fitxer.
+      LITELLM_PGVECTOR_POSTGRES_USER: ${LITELLM_PGVECTOR_POSTGRES_USER:-litellm_pgvector}
+      LITELLM_PGVECTOR_POSTGRES_PASSWORD: ${LITELLM_PGVECTOR_POSTGRES_PASSWORD:?Defineix LITELLM_PGVECTOR_POSTGRES_PASSWORD en el fitxer .env}
+      LITELLM_PGVECTOR_SCHEMA: ${LITELLM_PGVECTOR_SCHEMA:-litellm_pgvector}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       # S'executen només quan el volum de dades és nou.
@@ -290,16 +297,25 @@ services:
       - "127.0.0.1:${LITELLM_PGVECTOR_PORT:-8010}:8000"
     environment:
       # Reutilitza la base 'openwebui', que ja té l'extensió pgvector
-      # activada (01-enable-vector.sql) i és accessible amb el rol
-      # existent: no calen base ni rol nous. Taules pròpies del connector
-      # (vector_stores, embeddings), sense col·lisió amb les d'Open WebUI.
+      # activada (01-enable-vector.sql): no calen base nova. PERÒ es
+      # connecta amb un rol PROPI (LITELLM_PGVECTOR_POSTGRES_USER, creat per
+      # postgres-init/03-create-litellm-pgvector-role.sh), amb privilegis
+      # només sobre el seu esquema (PG_SCHEMA) — mai amb el rol 'openwebui'
+      # ni sobre 'public'. "prisma db push" introspecciona i reconcilia TOT
+      # l'esquema on es connecta, esborrant qualsevol taula que no siga
+      # seua: amb el rol 'openwebui' sobre 'public' ja va esborrar TOTES
+      # les taules d'Open WebUI una vegada (vegeu la nota d'incident real a
+      # containers/litellm-pgvector.Dockerfile i README.md). Amb este rol,
+      # encara que ho intentara, Postgres li negaria el permís. No canviar
+      # açò per conveniència.
       # Parts soltes (no DATABASE_URL ja construïda): el CMD de la imatge la
       # munta codificant PG_PASSWORD per URL, vegeu containers/litellm-pgvector.Dockerfile.
       PG_HOST: postgres
       PG_PORT: "5432"
-      PG_USER: ${POSTGRES_USER:-openwebui}
-      PG_PASSWORD: ${POSTGRES_PASSWORD}
+      PG_USER: ${LITELLM_PGVECTOR_POSTGRES_USER:-litellm_pgvector}
+      PG_PASSWORD: ${LITELLM_PGVECTOR_POSTGRES_PASSWORD}
       PG_DATABASE: ${POSTGRES_DB:-openwebui}
+      PG_SCHEMA: ${LITELLM_PGVECTOR_SCHEMA:-litellm_pgvector}
       SERVER_API_KEY: ${LITELLM_PGVECTOR_SERVER_API_KEY:?Defineix LITELLM_PGVECTOR_SERVER_API_KEY en el fitxer .env}
       # "openai/" li diu al SDK de LiteLLM que use el client OpenAI-
       # compatible contra EMBEDDING__BASE_URL (el prefix es lleva abans

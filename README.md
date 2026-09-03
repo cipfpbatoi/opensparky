@@ -126,21 +126,34 @@ Model:    gpt-oss-120b
 
 LiteLLM pot exposar la seua pròpia Vector Store API OpenAI-compatible (`/v1/vector_stores/{id}/search`), perquè qualsevol client (OpenCode, scripts) puga fer RAG sense passar per Open WebUI. No és el mateix magatzem que la RAG interna d'Open WebUI (fitxers pujats des de la UI) — són dos usos diferents de la mateixa infraestructura pgvector.
 
-**Arquitectura:** `litellm-pgvector` (connector no oficial de BerriAI, es construeix des del codi font fixat a un commit) reutilitza la base **`openwebui`** existent (taules pròpies `vector_stores`/`embeddings`, sense col·lisió) i genera els embeddings cridant de nou a LiteLLM amb bge-m3, amb una clau virtual restringida a eixe model.
+**Arquitectura:** `litellm-pgvector` (connector no oficial de BerriAI, es construeix des del codi font fixat a un commit) reutilitza la base **`openwebui`** existent, però connectat amb un **rol propi** (`LITELLM_PGVECTOR_POSTGRES_USER`, creat per `postgres-init/03-create-litellm-pgvector-role.sh`) amb privilegis **només** sobre el seu **propi esquema Postgres** (`LITELLM_PGVECTOR_SCHEMA=litellm_pgvector`) — mai amb el rol `openwebui` ni sobre l'esquema `public`, on viuen les taules reals d'Open WebUI. Genera els embeddings cridant de nou a LiteLLM amb bge-m3, amb una clau virtual restringida a eixe model.
 
 ```text
 client ──/v1/vector_stores/{id}/search──▶ litellm ──pg_vector──▶ litellm-pgvector ──openai/bge-m3──▶ litellm ──▶ vllm-embeddings
-                                                                        │
-                                                                  postgres:openwebui (taules vector_stores/embeddings)
+                                                                        │  (rol litellm_pgvector,
+                                                                        │   NOMÉS accés a l'esquema
+                                                                        │   litellm_pgvector)
+                                                                        ▼
+                                                    postgres:openwebui, esquema "litellm_pgvector"
+                                                    (esquema "public" — taules reals d'Open WebUI —
+                                                     estructuralment inaccessible per a este rol)
 ```
 
-**Problemes reals trobats i resolts (2026-09-03), per si es torna a desplegar de zero:**
+### ⚠️ Incident real de pèrdua de dades (2026-09-03) i com queda evitat
 
-1. **`vector_store_registry` en `config.yaml` no funciona.** És una issue oberta i coneguda de LiteLLM ([BerriAI/litellm#25947](https://github.com/BerriAI/litellm/issues/25947)) en la imatge `litellm-database:main-stable`: la secció es llig bé del YAML, però LiteLLM no l'aplica en arrancar (`vector_store_id is required..., got vector_store_id=None`, encara que hi estiga). Per això `litellm/config.yaml` no en declara cap i el registre es fa en canvi via l'API de gestió (`POST /vector_store/new`), que sí funciona i persisteix en la base de dades de LiteLLM.
+La primera versió d'este servei connectava amb el **rol `openwebui`** directament a l'esquema **`public`** (el mateix on viuen les taules reals d'Open WebUI) i executava `prisma db push --accept-data-loss` per crear les seues taules. `prisma db push` introspecciona **tot** l'esquema on es connecta i el reconcilia perquè coincidisca exactament amb el seu propi esquema Prisma (que només defineix `vector_stores`/`embeddings`) — **va esborrar totes les taules d'Open WebUI** (`chat`, `user`, `message`, `file`, `memory`..., producció real, xats i usuaris de veritat) sense cap avís més enllà del flag que ja vam passar nosaltres mateixos. Open WebUI es va poder recuperar tècnicament (Alembic recrea l'esquema sencer si no en troba cap), però totes les dades es van perdre igualment.
+
+La solució definitiva no és una convenció ("aneu amb compte", "useu un esquema diferent") sinó un **límit de privilegis real**: el rol `litellm_pgvector` que fa servir el connector **no té cap privilegi sobre `public`** (`has_schema_privilege('litellm_pgvector','public','CREATE')` és `false`). Encara que `prisma db push` intentara tocar `public` — de fet ho va intentar en una prova amb un altre error de configuració mentre es corregia açò — Postgres li nega el permís (`permission denied for table ...`) abans que puga esborrar res. La convenció (esquema dedicat) i el límit de privilegis (GRANT restringit) es reforcen l'un a l'altre; només el segon és una garantia real.
+
+**Problemes reals trobats i resolts, per si es torna a desplegar de zero:**
+
+1. **`vector_store_registry` en `config.yaml` no funciona.** Issue oberta i coneguda de LiteLLM ([BerriAI/litellm#25947](https://github.com/BerriAI/litellm/issues/25947)) en la imatge `litellm-database:main-stable`: la secció es llig bé del YAML, però LiteLLM no l'aplica en arrancar (`vector_store_id is required..., got vector_store_id=None`, encara que hi estiga, dins de `litellm_params`). `litellm/config.yaml` no en declara cap i el registre es fa via l'API de gestió (`POST /vector_store/new`), que sí funciona i persisteix en la base de dades de LiteLLM.
 2. **L'ID del magatzem el genera SEMPRE el connector** (UUID), no es pot triar un nom propi com `pgvector-bge-m3` per a fer-hi cerques — eixe nom només val com a etiqueta (`vector_store_name`) en el registre de LiteLLM. `scripts/litellm-register-vectorstore.sh` fa els dos passos (crear al connector, registrar l'UUID resultant a LiteLLM) automàticament.
 3. **`EMBEDDING__MODEL` necessita el prefix `openai/`** (`openai/bge-m3`, no `bge-m3` a soles): el connector crida el SDK Python de LiteLLM directament (`litellm.aembedding(model=...)`), que necessita eixe prefix per a saber que ha de parlar el protocol OpenAI contra `EMBEDDING__BASE_URL` — sense ell falla amb `LLM Provider NOT provided`.
-4. **La contrasenya de Postgres amb `/` o `+` trenca Prisma** (`invalid port number in database URL`), igual que amb `LITELLM_POSTGRES_PASSWORD` (vegeu més avall) — però ací és `POSTGRES_PASSWORD`, una credencial ja en ús per Open WebUI en producció, que no convé rotar només per això. La imatge codifica la contrasenya per URL en arrancar (`containers/litellm-pgvector.Dockerfile`), no cal tocar cap contrasenya existent.
-5. **`prisma generate` (client Python) baixa el motor a `$HOME/.cache/prisma-python/`**, no dins de `site-packages`: cal fixar `HOME` a un directori de l'usuari no-root *abans* de generar, o l'usuari no-root rep "Permission denied" en arrancar (la cau quedaria sota `/root`, il·legible).
+4. **`prisma generate` (client Python) baixa el motor a `$HOME/.cache/prisma-python/`**, no dins de `site-packages`: cal fixar `HOME` a un directori de l'usuari no-root *abans* de generar, o l'usuari no-root rep "Permission denied" en arrancar (la cau quedaria sota `/root`, il·legible).
+5. **Crear un esquema nou requereix el privilegi `CREATE` a nivell de base de dades**, que expressament NO es concedeix al rol `litellm_pgvector` (mínim privilegi): l'esquema el crea sempre `postgres-init/03-create-litellm-pgvector-role.sh` (font única de veritat), no el propi contenidor en arrancar.
+6. **El tipus `vector` (de l'extensió, creada en `public`) no és visible des d'un esquema aïllat.** `?schema=` en `DATABASE_URL` és imprescindible (sense ell, Prisma assumeix `public` per defecte, com es va comprovar directament amb l'intent que l'incident de dalt va aturar), però **sobreescriu tot el `search_path` de la connexió**, deixant `public` fora — ni `prisma db push` (columnes `vector(1024)`) ni les consultes pròpies del connector (`::vector` sense qualificar) troben el tipus. Solució en dos nivells: l'esquema Prisma es pedaça amb el tipus qualificat (`public.vector(1024)`, per a `db push`), i `main.py` es pedaça (`containers/litellm-pgvector-fix-search-path.py`) per ampliar el `search_path` de cada connexió (`litellm_pgvector, public`) just en connectar, per a les consultes en temps real.
+7. **La contrasenya de Postgres amb `/` o `+` trenca Prisma** (`invalid port number in database URL`), igual que amb `LITELLM_POSTGRES_PASSWORD` (vegeu més avall). La imatge codifica la contrasenya per URL en arrancar (`containers/litellm-pgvector.Dockerfile`).
 
 **Ús** (amb una clau virtual de LiteLLM, mai la mestra):
 
