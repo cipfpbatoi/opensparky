@@ -175,6 +175,83 @@ services:
       retries: 5
       start_period: 600s
 
+  # Model SENSE cap barrera de seguretat ("abliterated"/uncensored), NOMÉS
+  # per al laboratori controlat de ciberseguretat (red-team/pentest
+  # educatiu) — mai per a ús general. Igual que vllm-coding, opcional:
+  # només arranca amb `docker compose --profile cyberlab up -d`. No es
+  # publica ni per Caddy ni per cap altra via fora de LiteLLM; les claus
+  # que hi donen accés han d'estar restringides NOMÉS a este model i NOMÉS
+  # a qui necessite fer-lo servir en el curs (vegeu README.md).
+  vllm-cyberlab:
+    profiles:
+      - cyberlab
+    build:
+      context: .
+      dockerfile: containers/vllm.Dockerfile
+      args:
+        VLLM_IMAGE: ${VLLM_IMAGE:-vllm/vllm-openai}
+        VLLM_VERSION: ${VLLM_VERSION:?Defineix VLLM_VERSION en el fitxer .env}
+        APP_UID: ${APP_UID:-10001}
+        APP_GID: ${APP_GID:-10001}
+    image: local/dgx-vllm:${VLLM_VERSION:-latest}-arm64
+    platform: linux/arm64
+    container_name: dgx-vllm-cyberlab
+    restart: unless-stopped
+    init: true
+    gpus: all
+    command:
+      - --model=${VLLM_CYBERLAB_MODEL:?Defineix VLLM_CYBERLAB_MODEL en el fitxer .env}
+      - --served-model-name=qwen3.8-cyber
+      - --port=8000
+      - --api-key=${VLLM_CYBERLAB_API_KEY:?Defineix VLLM_CYBERLAB_API_KEY en el fitxer .env}
+      - --gpu-memory-utilization=${VLLM_CYBERLAB_GPU_MEM_UTIL:-0.65}
+      - --max-model-len=${VLLM_CYBERLAB_MAX_MODEL_LEN:-32768}
+      # Precaució, no confirmada com a necessària: model de 54GB, la
+      # baixada per si sola ja dona 0% GPU i memòria plana molts minuts
+      # (es va confondre amb el bloqueig real de compilació que sí vam
+      # tindre amb bge-m3 — comprova blobs/ creixent abans de donar-ho per
+      # penjat). Es deixa --enforce-eager de totes maneres perquè
+      # l'arquitectura (Qwen3_5, híbrida amb capes Mamba/GDN) és massa nova
+      # per confiar que el camí de compilació CUDA-graph estiga ben provat
+      # en esta plataforma; el cost és inferència una mica més lenta, sense
+      # risc.
+      - --enforce-eager
+      # Sense açò, qualsevol client que oferisca eines (OpenCode, p. ex.)
+      # falla amb '"auto" tool choice requires --enable-auto-tool-choice
+      # and --tool-call-parser to be set' — comprovat en directe.
+      # qwen3_xml és el parser genèric de la família Qwen3 a vLLM (no
+      # qwen3_coder, específic del model de codi).
+      - --enable-auto-tool-choice
+      - --tool-call-parser=qwen3_xml
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+      VLLM_NO_USAGE_STATS: "1"
+      DO_NOT_TRACK: "1"
+    volumes:
+      - vllm_cyberlab_cache:/home/vllm
+    networks:
+      - ai_backend
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=4g,mode=1777
+    pids_limit: 1024
+    cpus: ${VLLM_CYBERLAB_CPUS:-12}
+    mem_limit: ${VLLM_CYBERLAB_MEMORY_LIMIT:-80g}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          python3 -c "import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 900s
+
   postgres:
     image: pgvector/pgvector:${POSTGRES_IMAGE_TAG:-pg16}
     platform: linux/arm64
@@ -356,11 +433,13 @@ services:
     restart: unless-stopped
     init: true
     depends_on:
+      # NOMÉS postgres: litellm el necessita per a arrancar (base pròpia).
+      # Cap vllm-* és dependència forta a propòsit — han de poder parar-se
+      # o arrancar-se independentment (proves, canvis de model, alliberar
+      # memòria unificada per a un altre) sense que litellm deixe de
+      # funcionar per als models que sí estan actius. Un model amb el
+      # backend parat simplement falla en cridar-lo, no arrossega la resta.
       postgres:
-        condition: service_healthy
-      vllm-embeddings:
-        condition: service_healthy
-      vllm-reasoning:
         condition: service_healthy
     ports:
       # Accés directe en loopback per a administració/proves (claus, /ui),
@@ -380,6 +459,7 @@ services:
       VLLM_EMBEDDINGS_API_KEY: ${VLLM_EMBEDDINGS_API_KEY}
       VLLM_REASONING_API_KEY: ${VLLM_REASONING_API_KEY}
       VLLM_CODING_API_KEY: ${VLLM_CODING_API_KEY:-}
+      VLLM_CYBERLAB_API_KEY: ${VLLM_CYBERLAB_API_KEY:-}
       # Clau del connector litellm-pgvector (vector_store_registry en
       # litellm/config.yaml). No hi ha dependència d'arrancada entre tots dos
       # (litellm-pgvector no necessita litellm fins a la primera petició real
@@ -566,6 +646,8 @@ volumes:
     name: dgx_vllm_reasoning_cache
   vllm_coding_cache:
     name: dgx_vllm_coding_cache
+  vllm_cyberlab_cache:
+    name: dgx_vllm_cyberlab_cache
 
   caddy_data:
     name: dgx_caddy_data

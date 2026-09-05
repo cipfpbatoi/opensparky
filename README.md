@@ -128,6 +128,31 @@ API key:  la clau virtual generada (sk-...)
 Model:    gpt-oss-120b
 ```
 
+## Laboratori de ciberseguretat: model sense barreres de seguretat
+
+**⚠️ NOMÉS per a un entorn molt controlat de proves (curs de ciberseguretat, red-team/pentest educatiu). Mai per a ús general.**
+
+`vllm-cyberlab` serveix [`OBLITERATUS/Qwen3.8-27B-OBLITERATED`](https://huggingface.co/OBLITERATUS/Qwen3.8-27B-OBLITERATED) — un fine-tune "abliterated" (barreres de seguretat eliminades quirúrgicament) del `Qwen/Qwen3.8-27B` real d'Alibaba (publicat l'agost del 2026). El model card del propi autor (compte real i conegut de la comunitat de red-teaming, no un compte anònim/sospitós — verificat abans de desplegar-lo) ho diu clar: *"You are solely responsible for how you use this model and any content it generates"* i el desaconsella explícitament per a qui no tinga "technical understanding to use uncensored models responsibly".
+
+Servei **opcional**, mai arranca amb `docker compose up -d` normal:
+
+```bash
+docker compose --profile cyberlab up -d --build vllm-cyberlab
+```
+
+Comparteix GPU amb `vllm-reasoning` (gpt-oss-120b): amb la memòria unificada d'esta DGX, **no engegues tots dos alhora** sense revisar `VLLM_REASONING_GPU_MEM_UTIL` + `VLLM_CYBERLAB_GPU_MEM_UTIL` (per defecte 0.65 cadascun — sumats, superen la memòria disponible).
+
+**Accés restringit, no per defecte a tothom:**
+- Clau LiteLLM pròpia i restringida (`./scripts/litellm-create-key.sh cyberlab-course 0 qwen3.8-cyber`), mai barrejada amb altres claus.
+- A Open WebUI, el model ES VEU per a qualsevol usuari amb la clau de servei compartida (`OPENWEBUI_LITELLM_API_KEY`) en quant l'afiges als seus `models` (`/key/update`) — **cal restringir-lo després des de la UI** (Admin → Configuració → Models → `qwen3.8-cyber` → accés només al grup del curs de ciberseguretat) perquè no quede visible per a tot l'alumnat/professorat.
+- A OpenCode, proveïdor `litellm-cyberlab` separat en `~/.config/opencode/opencode.json`, amb la seua pròpia clau — mai el proveïdor `litellm` general.
+
+**Per aturar-lo** (allibera memòria, no esborra el model baixat):
+
+```bash
+docker stop dgx-vllm-cyberlab
+```
+
 ## Magatzem de vectors de LiteLLM (pgvector)
 
 LiteLLM pot exposar la seua pròpia Vector Store API OpenAI-compatible (`/v1/vector_stores/{id}/search`), perquè qualsevol client (OpenCode, scripts) puga fer RAG sense passar per Open WebUI. No és el mateix magatzem que la RAG interna d'Open WebUI (fitxers pujats des de la UI) — són dos usos diferents de la mateixa infraestructura pgvector.
