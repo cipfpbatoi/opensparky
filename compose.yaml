@@ -118,6 +118,71 @@ services:
       # la primera vegada. Ajusta si el healthcheck marca "unhealthy" massa prompte.
       start_period: 900s
 
+  # Germà xicotet de gpt-oss-120b (mateix llicenciant, mateix format
+  # "harmony"), ~13GB en disc (MXFP4 natiu). A diferència de vllm-reasoning
+  # (120b, parat des del 2026-09-04 per fer lloc a vllm-cyberlab), este cap
+  # còmodament en la memòria unificada junt amb vllm-embeddings i
+  # vllm-cyberlab alhora, per això s'executa per defecte (sense profile).
+  # Suma actual de --gpu-memory-utilization amb els altres sempre/opcionalment
+  # actius: embeddings 0.10 + reasoning-lite 0.20 + cyberlab 0.65 = 0.95 —
+  # marge estret si els tres corren a la vegada; revisa-ho abans d'afegir-ne
+  # més o d'activar també vllm-coding (profile coding) en eixe moment.
+  vllm-reasoning-lite:
+    build:
+      context: .
+      dockerfile: containers/vllm.Dockerfile
+      args:
+        VLLM_IMAGE: ${VLLM_IMAGE:-vllm/vllm-openai}
+        VLLM_VERSION: ${VLLM_VERSION:?Defineix VLLM_VERSION en el fitxer .env}
+        APP_UID: ${APP_UID:-10001}
+        APP_GID: ${APP_GID:-10001}
+    image: local/dgx-vllm:${VLLM_VERSION:-latest}-arm64
+    platform: linux/arm64
+    container_name: dgx-vllm-reasoning-lite
+    restart: unless-stopped
+    init: true
+    gpus: all
+    command:
+      - --model=${VLLM_REASONING_LITE_MODEL:-openai/gpt-oss-20b}
+      - --served-model-name=gpt-oss-20b
+      - --port=8000
+      - --api-key=${VLLM_REASONING_LITE_API_KEY:?Defineix VLLM_REASONING_LITE_API_KEY en el fitxer .env}
+      - --gpu-memory-utilization=${VLLM_REASONING_LITE_GPU_MEM_UTIL:-0.20}
+      - --max-model-len=${VLLM_REASONING_LITE_MAX_MODEL_LEN:-32768}
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+      VLLM_NO_USAGE_STATS: "1"
+      DO_NOT_TRACK: "1"
+      # Mateix problema que vllm-reasoning: gpt-oss (120b i 20b) usa el
+      # format "harmony", el client Rust d'openai_harmony intenta baixar en
+      # arrancar i falla en molts entorns. Vegeu el comentari complet en
+      # vllm-reasoning.
+      TIKTOKEN_RS_CACHE_DIR: /home/vllm/.cache/tiktoken-rs-cache
+    volumes:
+      - vllm_reasoning_lite_cache:/home/vllm
+    networks:
+      - ai_backend
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=2g,mode=1777
+    pids_limit: 1024
+    cpus: ${VLLM_REASONING_LITE_CPUS:-6}
+    mem_limit: ${VLLM_REASONING_LITE_MEMORY_LIMIT:-24g}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          python3 -c "import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+
   # Model de programació / ús general (Nemotron, Qwen2.5-Coder...). Opcional:
   # només arranca amb `docker compose --profile coding up -d`. Comparteix GPU
   # amb vllm-reasoning: comprova que la suma de VLLM_*_GPU_MEM_UTIL no supera
@@ -644,6 +709,8 @@ volumes:
     name: dgx_vllm_embeddings_cache
   vllm_reasoning_cache:
     name: dgx_vllm_reasoning_cache
+  vllm_reasoning_lite_cache:
+    name: dgx_vllm_reasoning_lite_cache
   vllm_coding_cache:
     name: dgx_vllm_coding_cache
   vllm_cyberlab_cache:

@@ -20,3 +20,11 @@ services:
   vllm-coding:
     ports:
       - "127.0.0.1:${VLLM_CODING_HOST_PORT:-8003}:8000"
+
+  vllm-cyberlab:
+    ports:
+      - "127.0.0.1:${VLLM_CYBERLAB_HOST_PORT:-8004}:8000"
+
+  vllm-reasoning-lite:
+    ports:
+      - "127.0.0.1:${VLLM_REASONING_LITE_HOST_PORT:-8005}:8000"

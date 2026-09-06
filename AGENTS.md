@@ -10,7 +10,7 @@ make build            # docker compose build --pull
 make up                # docker compose up -d --build
 docker compose --profile coding up -d --build vllm-coding   # model de codi opcional
 make smoke            # ./scripts/smoke-test.sh
-make test-vllm SERVICE=embeddings|reasoning|coding   # prova un vLLM directament (compose.dev.yaml)
+make test-vllm SERVICE=embeddings|reasoning|reasoning-lite|coding|cyberlab   # prova un vLLM directament (compose.dev.yaml)
 make test-litellm API_KEY=sk-... MODEL=gpt-oss-120b  # prova l'API de LiteLLM
 make litellm-create-key USER=id [BUDGET=usd] [MODELS=m1,m2]
 make litellm-register-vectorstore   # magatzem de vectors LiteLLM+pgvector, opcional

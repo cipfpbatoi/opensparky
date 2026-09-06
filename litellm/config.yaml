@@ -24,6 +24,15 @@ model_list:
   #     api_base: http://vllm-reasoning:8000/v1
   #     api_key: os.environ/VLLM_REASONING_API_KEY
 
+  # Germà xicotet de gpt-oss-120b, actiu per defecte (2026-09-06, servei
+  # vllm-reasoning-lite sense profile): cap junt amb bge-m3 i qwen3.8-cyber
+  # en la memòria unificada, a diferència del de 120b.
+  - model_name: gpt-oss-20b
+    litellm_params:
+      model: openai/gpt-oss-20b
+      api_base: http://vllm-reasoning-lite:8000/v1
+      api_key: os.environ/VLLM_REASONING_LITE_API_KEY
+
   # Model de programació/ús general. Descomenta quan el servei vllm-coding
   # estiga desplegat (`docker compose --profile coding up -d`, vegeu README.md).
   # - model_name: coding-model

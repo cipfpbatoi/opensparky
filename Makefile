@@ -27,7 +27,7 @@ backup:
 	./scripts/backup.sh
 
 test-vllm:
-	@test -n "$(SERVICE)" || (echo "Ús: make test-vllm SERVICE=embeddings|reasoning|coding" && exit 1)
+	@test -n "$(SERVICE)" || (echo "Ús: make test-vllm SERVICE=embeddings|reasoning|reasoning-lite|coding|cyberlab" && exit 1)
 	./scripts/test-vllm.sh "$(SERVICE)"
 
 test-litellm:

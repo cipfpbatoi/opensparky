@@ -14,7 +14,7 @@ set +a
 
 SERVICE="${1:-}"
 if [[ -z "$SERVICE" ]]; then
-  echo "Ús: $0 <embeddings|reasoning|coding>" >&2
+  echo "Ús: $0 <embeddings|reasoning|reasoning-lite|coding|cyberlab>" >&2
   exit 1
 fi
 
@@ -34,8 +34,18 @@ case "$SERVICE" in
     API_KEY="${VLLM_CODING_API_KEY:-}"
     MODEL="coding-model"
     ;;
+  cyberlab)
+    PORT="${VLLM_CYBERLAB_HOST_PORT:-8004}"
+    API_KEY="${VLLM_CYBERLAB_API_KEY:-}"
+    MODEL="qwen3.8-cyber"
+    ;;
+  reasoning-lite)
+    PORT="${VLLM_REASONING_LITE_HOST_PORT:-8005}"
+    API_KEY="${VLLM_REASONING_LITE_API_KEY:-}"
+    MODEL="gpt-oss-20b"
+    ;;
   *)
-    echo "ERROR: servei desconegut '${SERVICE}'. Usa embeddings, reasoning o coding." >&2
+    echo "ERROR: servei desconegut '${SERVICE}'. Usa embeddings, reasoning, reasoning-lite, coding o cyberlab." >&2
     exit 1
     ;;
 esac

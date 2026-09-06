@@ -32,12 +32,12 @@ Open WebUI                     LiteLLM ── claus virtuals, usuaris, pressupos
               │
         xarxa Docker (ai_backend)
               │
-   ┌──────────┼──────────┬───────────────┬───────────────┐
-   │          │          │               │               │
-postgres:5432 tika:9998  vllm-embeddings vllm-reasoning  vllm-coding (opcional)
-(openwebui +  (extracció (bge-m3)        (gpt-oss:120b)  (perfil "coding")
- litellm,     documental)     │               │               │
- sense port)                   └───────────────┴───────┬───────┘
+   ┌──────────┼──────────┬───────────────┬────────────────┬───────────────┐
+   │          │          │               │                │               │
+postgres:5432 tika:9998  vllm-embeddings vllm-reasoning-lite vllm-reasoning vllm-coding (opcional)
+(openwebui +  (extracció (bge-m3)        (gpt-oss:20b)    (gpt-oss:120b,   (perfil "coding")
+ litellm,     documental)     │               │            parat)          │
+ sense port)                   └───────────────┴────────────────┴──────────┘
    │                                            GPU NVIDIA compartida
 dgx_postgres_data
 ```
@@ -47,22 +47,22 @@ Cap servei d'inferència (vLLM) ni la base de dades es publica fora de la xarxa 
 ## Per què LiteLLM davant de vLLM (i no Open WebUI)
 
 - Un únic lloc per crear/revocar claus i assignar pressupostos, per usuari o aplicació, independentment de si el client és Open WebUI, un script o una integració futura.
-- Els clients no necessiten conèixer quin `vllm-*` serveix quin model: LiteLLM exposa un únic catàleg (`bge-m3`, `gpt-oss-120b`, opcionalment `coding-model`) sobre una única API OpenAI-compatible.
+- Els clients no necessiten conèixer quin `vllm-*` serveix quin model: LiteLLM exposa un únic catàleg (`bge-m3`, `gpt-oss-20b`, opcionalment `gpt-oss-120b`, `coding-model` o `qwen3.8-cyber`) sobre una única API OpenAI-compatible.
 - Prepara separar peces en el futur (p. ex. moure `vllm-reasoning` a una altra màquina) sense tocar els clients: només caldria canviar `api_base` en `litellm/config.yaml`.
 
 Per això Open WebUI ja **no** gestiona claus API pròpies (`ENABLE_API_KEYS` i relacionades s'han eliminat: eren la via d'accés extern quan Open WebUI parlava directament amb Ollama; ara eixa via és LiteLLM).
 
 ## vLLM: un servidor per model
 
-Cada model corre en el seu propi contenidor vLLM (`vllm-embeddings`, `vllm-reasoning`, `vllm-coding`), tots compartint la mateixa GPU. Això és deliberat: vLLM no barreja models totalment diferents en un mateix procés, i mantindre'ls separats permet aturar-ne un (per exemple `vllm-coding`) sense afectar els altres.
+Cada model corre en el seu propi contenidor vLLM (`vllm-embeddings`, `vllm-reasoning-lite`, `vllm-reasoning`, `vllm-coding`, `vllm-cyberlab`), tots compartint la mateixa GPU. Això és deliberat: vLLM no barreja models totalment diferents en un mateix procés, i mantindre'ls separats permet aturar-ne un (per exemple `vllm-coding`) sense afectar els altres.
 
-**Memòria unificada compartida.** La DGX Spark reparteix memòria entre CPU, sistema operatiu i GPU. `VLLM_*_GPU_MEM_UTIL` reserva un percentatge de la memòria de GPU per procés; si actives `vllm-coding` a més de `vllm-reasoning`, comprova que la suma (més marge per al sistema) no supere el total físic abans d'arrancar-los alhora. Els valors per defecte en `.env.example` són conservadors per a `gpt-oss:120b` + `bge-m3` funcionant junts; `vllm-coding` és opcional i pensat per activar-lo quan calga, no necessàriament de forma permanent.
+**Memòria unificada compartida.** La DGX Spark reparteix memòria entre CPU, sistema operatiu i GPU. `VLLM_*_GPU_MEM_UTIL` reserva un percentatge de la memòria de GPU per procés; abans d'arrancar-ne diversos alhora, comprova que la suma (més marge per al sistema) no supere el total físic. Per defecte estan actius `vllm-embeddings` (`bge-m3`, 0.10) i `vllm-reasoning-lite` (`gpt-oss-20b`, 0.20); `vllm-cyberlab` (`qwen3.8-cyber`, 0.65, perfil `cyberlab`) hi cap junt amb els dos anteriors (suma 0.95). `vllm-reasoning` (`gpt-oss-120b`, 0.65) està parat des del 2026-09-04 precisament perquè NO cap alhora amb `vllm-cyberlab` (0.65 + 0.65 supera la memòria disponible) — reactiva'l només si abans pares `vllm-cyberlab`. `vllm-coding` és opcional (perfil `coding`) i pensat per activar-lo quan calga, no necessàriament de forma permanent.
 
 **Verificat el 2026-09-02 en esta DGX Spark concreta** amb `vllm/vllm-openai:v0.28.0` (build `linux/arm64` confirmada: `docker manifest inspect vllm/vllm-openai:v0.28.0`) i `ghcr.io/berriai/litellm-database:main-stable` (també `arm64`). Si canvies de versió, torna a comprovar-ho abans de desplegar.
 
-**Problema conegut i ja resolt en `vllm-reasoning`: vocabulari "harmony" de gpt-oss.** `openai/gpt-oss-120b` (i -20b) fan servir el format de resposta "harmony" d'OpenAI. El client Rust intern (`openai_harmony`) intenta baixar el seu fitxer de vocabulari des de `openaipublic.blob.core.windows.net` en arrancar, i eixe client falla en molts entorns — també reportat als playbooks oficials de DGX Spark ([NVIDIA/dgx-spark-playbooks#17](https://github.com/NVIDIA/dgx-spark-playbooks/issues/17)) — encara que la resta de xarxa (baixada del model des de HuggingFace, etc.) funcione perfectament. Sense això, `vllm-reasoning` arranca i marca healthy, però `/v1/chat/completions` respon `500 error downloading or loading vocab file`.
+**Problema conegut i ja resolt en `vllm-reasoning` i `vllm-reasoning-lite`: vocabulari "harmony" de gpt-oss.** `openai/gpt-oss-120b` i `openai/gpt-oss-20b` fan servir el format de resposta "harmony" d'OpenAI. El client Rust intern (`openai_harmony`) intenta baixar el seu fitxer de vocabulari des de `openaipublic.blob.core.windows.net` en arrancar, i eixe client falla en molts entorns — també reportat als playbooks oficials de DGX Spark ([NVIDIA/dgx-spark-playbooks#17](https://github.com/NVIDIA/dgx-spark-playbooks/issues/17)) — encara que la resta de xarxa (baixada del model des de HuggingFace, etc.) funcione perfectament. Sense això, el contenidor arranca i marca healthy, però `/v1/chat/completions` respon `500 error downloading or loading vocab file`.
 
-La solució és pre-descarregar eixe fitxer amb el nom que espera la seua caché (SHA1 de la URL) dins del volum persistent `dgx_vllm_reasoning_cache`, i apuntar-hi amb `TIKTOKEN_RS_CACHE_DIR` (ja configurat en `compose.yaml`). Si es recrea el volum des de zero, cal repetir-ho una vegada:
+La solució és pre-descarregar eixe fitxer amb el nom que espera la seua caché (SHA1 de la URL) dins del volum persistent de cada servei (`dgx_vllm_reasoning_cache` / `dgx_vllm_reasoning_lite_cache`), i apuntar-hi amb `TIKTOKEN_RS_CACHE_DIR` (ja configurat en `compose.yaml` per als dos). Si es recrea el volum des de zero, cal repetir-ho una vegada (canvia `vllm-reasoning` per `vllm-reasoning-lite` si és eixe el que has recreat):
 
 ```bash
 docker compose exec vllm-reasoning python3 -c "
@@ -240,7 +240,8 @@ LITELLM_POSTGRES_PASSWORD=...      # openssl rand -hex 24
 LITELLM_MASTER_KEY=...             # echo "sk-$(openssl rand -hex 32)"
 LITELLM_SALT_KEY=...               # openssl rand -base64 48
 VLLM_EMBEDDINGS_API_KEY=...        # echo "sk-$(openssl rand -hex 32)"
-VLLM_REASONING_API_KEY=...         # echo "sk-$(openssl rand -hex 32)"
+VLLM_REASONING_LITE_API_KEY=...    # echo "sk-$(openssl rand -hex 32)", gpt-oss-20b (actiu per defecte)
+VLLM_REASONING_API_KEY=...         # echo "sk-$(openssl rand -hex 32)", gpt-oss-120b (opcional, parat per defecte)
 VLLM_CODING_API_KEY=...            # echo "sk-$(openssl rand -hex 32)", només si actives el perfil coding
 VLLM_CODING_MODEL=...              # confirma el model, vegeu secció anterior
 LITELLM_PGVECTOR_SERVER_API_KEY=...  # echo "sk-$(openssl rand -hex 32)", només si vols el magatzem de vectors
@@ -257,16 +258,16 @@ LITELLM_PGVECTOR_SERVER_API_KEY=...  # echo "sk-$(openssl rand -hex 32)", només
 ### 3. Alçar la base, els vLLM i LiteLLM (encara sense Open WebUI)
 
 ```bash
-docker compose up -d --build postgres vllm-embeddings vllm-reasoning litellm
+docker compose up -d --build postgres vllm-embeddings vllm-reasoning-lite litellm
 docker compose ps
 ```
 
-Espera que `vllm-reasoning` estiga `healthy` (la primera càrrega d'un model de 120B pot trigar molts minuts a descarregar-se i carregar-se).
+Espera que `vllm-reasoning-lite` estiga `healthy` (uns minuts, model de ~13GB). Si en lloc del model per defecte vols també `gpt-oss-120b`, descomenta el seu bloc en `litellm/config.yaml` i afig `vllm-reasoning` a l'ordre anterior — però no l'engegues junt amb `vllm-cyberlab` (vegeu "Memòria unificada compartida" més amunt).
 
 ### 4. Generar la clau d'Open WebUI en LiteLLM
 
 ```bash
-./scripts/litellm-create-key.sh openwebui-service 0 bge-m3,gpt-oss-120b
+./scripts/litellm-create-key.sh openwebui-service 0 bge-m3,gpt-oss-20b
 ```
 
 Copia el `key` de la resposta a `OPENWEBUI_LITELLM_API_KEY` en `.env`.
@@ -325,8 +326,8 @@ curl http://127.0.0.1:3000/health
 Tota la gestió de claus es fa contra LiteLLM, en loopback, amb la clau mestra — mai amb la clau mestra des d'un client final:
 
 ```bash
-./scripts/litellm-create-key.sh professorat-maria 20 gpt-oss-120b,bge-m3
-./scripts/litellm-create-key.sh alumnat-grup1a 5 gpt-oss-120b
+./scripts/litellm-create-key.sh professorat-maria 20 gpt-oss-20b,bge-m3
+./scripts/litellm-create-key.sh alumnat-grup1a 5 gpt-oss-20b
 ./scripts/litellm-create-key.sh integracio-moodle 0
 ```
 
@@ -371,11 +372,11 @@ Restauració:
 ## Proves
 
 ```bash
-make test-vllm SERVICE=reasoning       # requereix compose.dev.yaml
-make test-litellm API_KEY=sk-... MODEL=gpt-oss-120b
+make test-vllm SERVICE=reasoning-lite  # requereix compose.dev.yaml
+make test-litellm API_KEY=sk-... MODEL=gpt-oss-20b
 LITELLM_API_BASE_URL=https://api.spark-6169.cipfpbatoi.lan \
 LITELLM_API_KEY=sk-... \
-./scripts/test-litellm-api.sh gpt-oss-120b
+./scripts/test-litellm-api.sh gpt-oss-20b
 ```
 
 ## GitHub
