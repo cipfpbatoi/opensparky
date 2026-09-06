@@ -119,7 +119,8 @@ services:
       start_period: 900s
 
   # Germà xicotet de gpt-oss-120b (mateix llicenciant, mateix format
-  # "harmony"), ~13GB en disc (MXFP4 natiu). A diferència de vllm-reasoning
+  # "harmony"), ~22GB en disc (MXFP4 natiu, verificat via HF API: 20,9 mil
+  # milions de paràmetres, majoritàriament U8/1byte). A diferència de vllm-reasoning
   # (120b, parat des del 2026-09-04 per fer lloc a vllm-cyberlab), este cap
   # còmodament en la memòria unificada junt amb vllm-embeddings i
   # vllm-cyberlab alhora, per això s'executa per defecte (sense profile).
@@ -181,7 +182,12 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 300s
+      # Comprovat en directe (2026-09-06): sense HF_TOKEN, l'accés anònim a
+      # HuggingFace pot anar a ~3-4MB/s per als ~22GB del model — 300s es
+      # queda curt i marca "unhealthy" mentre encara es descarrega
+      # correctament (comprova blobs/*.incomplete abans de donar-ho per
+      # penjat, mateix parany que amb vllm-cyberlab).
+      start_period: 1800s
 
   # Model de programació / ús general (Nemotron, Qwen2.5-Coder...). Opcional:
   # només arranca amb `docker compose --profile coding up -d`. Comparteix GPU

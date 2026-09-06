@@ -262,7 +262,7 @@ docker compose up -d --build postgres vllm-embeddings vllm-reasoning-lite litell
 docker compose ps
 ```
 
-Espera que `vllm-reasoning-lite` estiga `healthy` (uns minuts, model de ~13GB). Si en lloc del model per defecte vols també `gpt-oss-120b`, descomenta el seu bloc en `litellm/config.yaml` i afig `vllm-reasoning` a l'ordre anterior — però no l'engegues junt amb `vllm-cyberlab` (vegeu "Memòria unificada compartida" més amunt).
+Espera que `vllm-reasoning-lite` estiga `healthy` (model de ~22GB; sense `HF_TOKEN` la baixada anònima de HuggingFace pot anar lenta —comprova `blobs/*.incomplete` dins del volum abans de donar-ho per penjat, no és el bloqueig de compilació de `bge-m3`). Si en lloc del model per defecte vols també `gpt-oss-120b`, descomenta el seu bloc en `litellm/config.yaml` i afig `vllm-reasoning` a l'ordre anterior — però no l'engegues junt amb `vllm-cyberlab` (vegeu "Memòria unificada compartida" més amunt).
 
 ### 4. Generar la clau d'Open WebUI en LiteLLM
 
