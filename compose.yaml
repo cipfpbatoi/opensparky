@@ -78,6 +78,12 @@ services:
       - --api-key=${VLLM_REASONING_API_KEY:?Defineix VLLM_REASONING_API_KEY en el fitxer .env}
       - --gpu-memory-utilization=${VLLM_REASONING_GPU_MEM_UTIL:-0.65}
       - --max-model-len=${VLLM_REASONING_MAX_MODEL_LEN:-32768}
+      # Mateix problema comprovat en directe a vllm-reasoning-lite
+      # (2026-09-09): sense açò, una crida amb "tools" acaba en
+      # finish_reason=stop sense tool_calls. "openai" és el parser de vLLM
+      # per al format "harmony", nadiu de tota la família gpt-oss.
+      - --enable-auto-tool-choice
+      - --tool-call-parser=openai
     environment:
       HF_TOKEN: ${HF_TOKEN:-}
       VLLM_NO_USAGE_STATS: "1"
@@ -150,6 +156,14 @@ services:
       - --api-key=${VLLM_REASONING_LITE_API_KEY:?Defineix VLLM_REASONING_LITE_API_KEY en el fitxer .env}
       - --gpu-memory-utilization=${VLLM_REASONING_LITE_GPU_MEM_UTIL:-0.20}
       - --max-model-len=${VLLM_REASONING_LITE_MAX_MODEL_LEN:-32768}
+      # Comprovat en directe (2026-09-09): sense açò, un client amb eines
+      # (OpenCode, o qualsevol crida amb "tools") acaba en finish_reason=stop
+      # sense tool_calls — el model raona que hauria de cridar l'eina
+      # (es veu en reasoning_content) però la resposta mai s'arriba a
+      # parsejar com a crida real. "openai" és el parser de vLLM per al
+      # format "harmony" (nadiu de gpt-oss), no el genèric "hermes"/"llama3".
+      - --enable-auto-tool-choice
+      - --tool-call-parser=openai
     environment:
       HF_TOKEN: ${HF_TOKEN:-}
       VLLM_NO_USAGE_STATS: "1"
