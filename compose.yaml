@@ -126,14 +126,15 @@ services:
 
   # Germà xicotet de gpt-oss-120b (mateix llicenciant, mateix format
   # "harmony"), ~22GB en disc (MXFP4 natiu, verificat via HF API: 20,9 mil
-  # milions de paràmetres, majoritàriament U8/1byte). A diferència de vllm-reasoning
-  # (120b, parat des del 2026-09-04 per fer lloc a vllm-cyberlab), este cap
-  # còmodament en la memòria unificada junt amb vllm-embeddings i
-  # vllm-cyberlab alhora, per això s'executa per defecte (sense profile).
-  # Suma actual de --gpu-memory-utilization amb els altres sempre/opcionalment
-  # actius: embeddings 0.10 + reasoning-lite 0.20 + cyberlab 0.65 = 0.95 —
-  # marge estret si els tres corren a la vegada; revisa-ho abans d'afegir-ne
-  # més o d'activar també vllm-coding (profile coding) en eixe moment.
+  # milions de paràmetres, majoritàriament U8/1byte). Prou lleuger per a
+  # caber junt amb vllm-embeddings i vllm-cyberlab alhora (embeddings 0.10 +
+  # reasoning-lite 0.20 + cyberlab 0.65 = 0.95, marge estret), per això NO
+  # té profile — però això vol dir que un `docker compose up -d` genèric el
+  # torna a arrancar encara que l'hages parat expressament amb
+  # `docker compose stop`. Estat actual (2026-09-16): PARAT, per fer lloc a
+  # vllm-reasoning (120b) — vegeu eixe servei i litellm/config.yaml per
+  # quin és el model actiu en cada moment; revisa la suma de
+  # --gpu-memory-utilization abans de tornar-lo a arrancar junt amb altres.
   vllm-reasoning-lite:
     build:
       context: .

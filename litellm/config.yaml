@@ -15,23 +15,23 @@ model_list:
       api_base: http://vllm-embeddings:8000/v1
       api_key: os.environ/VLLM_EMBEDDINGS_API_KEY
 
-  # vllm-reasoning parat (2026-09-04) per a alliberar memòria per a
-  # vllm-cyberlab. Descomenta i `docker compose up -d vllm-reasoning` per
-  # a tornar-lo a arrancar.
-  # - model_name: gpt-oss-120b
-  #   litellm_params:
-  #     model: openai/gpt-oss-120b
-  #     api_base: http://vllm-reasoning:8000/v1
-  #     api_key: os.environ/VLLM_REASONING_API_KEY
-
-  # Germà xicotet de gpt-oss-120b, actiu per defecte (2026-09-06, servei
-  # vllm-reasoning-lite sense profile): cap junt amb bge-m3 i qwen3.8-cyber
-  # en la memòria unificada, a diferència del de 120b.
-  - model_name: gpt-oss-20b
+  # vllm-reasoning actiu (2026-09-16, vllm-cyberlab i vllm-reasoning-lite
+  # parats per fer-li lloc). Descomenta el bloc de baix i torna a arrancar
+  # si canvies de model actiu.
+  - model_name: gpt-oss-120b
     litellm_params:
-      model: openai/gpt-oss-20b
-      api_base: http://vllm-reasoning-lite:8000/v1
-      api_key: os.environ/VLLM_REASONING_LITE_API_KEY
+      model: openai/gpt-oss-120b
+      api_base: http://vllm-reasoning:8000/v1
+      api_key: os.environ/VLLM_REASONING_API_KEY
+
+  # Germà xicotet de gpt-oss-120b, parat (2026-09-16) per fer lloc a
+  # gpt-oss-120b. Descomenta i `docker compose up -d vllm-reasoning-lite`
+  # per a tornar-lo a arrancar.
+  # - model_name: gpt-oss-20b
+  #   litellm_params:
+  #     model: openai/gpt-oss-20b
+  #     api_base: http://vllm-reasoning-lite:8000/v1
+  #     api_key: os.environ/VLLM_REASONING_LITE_API_KEY
 
   # Model de programació/ús general. Descomenta quan el servei vllm-coding
   # estiga desplegat (`docker compose --profile coding up -d`, vegeu README.md).
@@ -42,14 +42,15 @@ model_list:
   #     api_key: os.environ/VLLM_CODING_API_KEY
 
   # Model SENSE barreres de seguretat ("abliterated"), NOMÉS per al
-  # laboratori controlat de ciberseguretat — mai per a ús general. Claus
-  # d'accés restringides NOMÉS a este model (vegeu README.md, secció
-  # "Laboratori de ciberseguretat").
-  - model_name: qwen3.8-cyber
-    litellm_params:
-      model: openai/qwen3.8-cyber
-      api_base: http://vllm-cyberlab:8000/v1
-      api_key: os.environ/VLLM_CYBERLAB_API_KEY
+  # laboratori controlat de ciberseguretat — mai per a ús general. Parat
+  # (2026-09-16). Descomenta i `docker compose up -d vllm-cyberlab` per a
+  # tornar-lo a arrancar. Claus d'accés restringides NOMÉS a este model
+  # (vegeu README.md, secció "Laboratori de ciberseguretat").
+  # - model_name: qwen3.8-cyber
+  #   litellm_params:
+  #     model: openai/qwen3.8-cyber
+  #     api_base: http://vllm-cyberlab:8000/v1
+  #     api_key: os.environ/VLLM_CYBERLAB_API_KEY
 
 # El magatzem de vectors (connector litellm-pgvector) NO es declara ací.
 # Provat el 2026-09-03: carregar "vector_store_registry" des de config.yaml
