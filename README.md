@@ -32,13 +32,13 @@ Open WebUI                     LiteLLM ── claus virtuals, usuaris, pressupos
               │
         xarxa Docker (ai_backend)
               │
-   ┌──────────┼──────────┬───────────────┬────────────────┬───────────────┐
-   │          │          │               │                │               │
-postgres:5432 tika:9998  vllm-embeddings vllm-reasoning-lite vllm-reasoning vllm-coding (opcional)
-(openwebui +  (extracció (bge-m3)        (gpt-oss:20b)    (gpt-oss:120b,   (perfil "coding")
- litellm,     documental)     │               │            parat)          │
- sense port)                   └───────────────┴────────────────┴──────────┘
-   │                                            GPU NVIDIA compartida
+   ┌──────────┼──────────┬─────────────┬──────────────────┬──────────────┬───────────────┐
+   │          │          │             │                  │              │               │
+postgres:5432 tika:9998  vllm-embeddings vllm-reasoning   vllm-reasoning-lite vllm-cyberlab vllm-coding
+(openwebui +  (extracció (bge-m3,      (gpt-oss:120b)   (gpt-oss:20b)   (qwen3.8-cyber, (qwen3-coder-next,
+ litellm,     documental) sempre actiu)     │                  │        perfil cyberlab)  perfil coding)
+ sense port)                   └──────────────┴──────────────────┴──────────────┴───────────────┘
+   │                                            GPU NVIDIA compartida (normalment 1-2 actius a la vegada)
 dgx_postgres_data
 ```
 
@@ -47,7 +47,7 @@ Cap servei d'inferència (vLLM) ni la base de dades es publica fora de la xarxa 
 ## Per què LiteLLM davant de vLLM (i no Open WebUI)
 
 - Un únic lloc per crear/revocar claus i assignar pressupostos, per usuari o aplicació, independentment de si el client és Open WebUI, un script o una integració futura.
-- Els clients no necessiten conèixer quin `vllm-*` serveix quin model: LiteLLM exposa un únic catàleg (`bge-m3`, `gpt-oss-20b`, opcionalment `gpt-oss-120b`, `coding-model` o `qwen3.8-cyber`) sobre una única API OpenAI-compatible.
+- Els clients no necessiten conèixer quin `vllm-*` serveix quin model: LiteLLM exposa un únic catàleg (`bge-m3`, i segons quin estiga actiu, `gpt-oss-20b`, `gpt-oss-120b`, `qwen3-coder-next` o `qwen3.8-cyber`) sobre una única API OpenAI-compatible.
 - Prepara separar peces en el futur (p. ex. moure `vllm-reasoning` a una altra màquina) sense tocar els clients: només caldria canviar `api_base` en `litellm/config.yaml`.
 
 Per això Open WebUI ja **no** gestiona claus API pròpies (`ENABLE_API_KEYS` i relacionades s'han eliminat: eren la via d'accés extern quan Open WebUI parlava directament amb Ollama; ara eixa via és LiteLLM).
@@ -56,7 +56,7 @@ Per això Open WebUI ja **no** gestiona claus API pròpies (`ENABLE_API_KEYS` i 
 
 Cada model corre en el seu propi contenidor vLLM (`vllm-embeddings`, `vllm-reasoning-lite`, `vllm-reasoning`, `vllm-coding`, `vllm-cyberlab`), tots compartint la mateixa GPU. Això és deliberat: vLLM no barreja models totalment diferents en un mateix procés, i mantindre'ls separats permet aturar-ne un (per exemple `vllm-coding`) sense afectar els altres.
 
-**Memòria unificada compartida.** La DGX Spark reparteix memòria entre CPU, sistema operatiu i GPU. `VLLM_*_GPU_MEM_UTIL` reserva un percentatge de la memòria de GPU per procés; abans d'arrancar-ne diversos alhora, comprova que la suma (més marge per al sistema) no supere el total físic. `vllm-embeddings` (`bge-m3`, 0.10) és l'únic sempre actiu. Els altres tres es reparteixen l'espai que queda i normalment només n'hi ha un o dos actius alhora: `vllm-reasoning` (`gpt-oss-120b`, 0.65), `vllm-reasoning-lite` (`gpt-oss-20b`, 0.20, sense profile — un `docker compose up -d` genèric el torna a arrancar encara que l'hages parat manualment) i `vllm-cyberlab` (`qwen3.8-cyber`, 0.65, perfil `cyberlab`). `gpt-oss-120b` + `vllm-cyberlab` juntes ja sumen 0.65+0.65=1,30, més del disponible — no els engegues alhora. Consulta `litellm/config.yaml` per veure quin és el model actiu en cada moment (l'altre queda comentat). `vllm-coding` és opcional (perfil `coding`) i pensat per activar-lo quan calga, no necessàriament de forma permanent.
+**Memòria unificada compartida.** La DGX Spark reparteix memòria entre CPU, sistema operatiu i GPU. `VLLM_*_GPU_MEM_UTIL` reserva un percentatge de la memòria de GPU per procés; abans d'arrancar-ne diversos alhora, comprova que la suma (més marge per al sistema) no supere el total físic. `vllm-embeddings` (`bge-m3`, 0.10) és l'únic sempre actiu. Els altres quatre es reparteixen l'espai que queda i normalment només n'hi ha un o dos actius alhora: `vllm-reasoning` (`gpt-oss-120b`, 0.65), `vllm-reasoning-lite` (`gpt-oss-20b`, 0.20, sense profile — un `docker compose up -d` genèric el torna a arrancar encara que l'hages parat manualment), `vllm-cyberlab` (`qwen3.8-cyber`, 0.65, perfil `cyberlab`) i `vllm-coding` (`qwen3-coder-next`, 0.75, perfil `coding`, el més gran del conjunt). Cap parella que sume per damunt d'~1,0 no pot anar alhora (per exemple `gpt-oss-120b` + `vllm-cyberlab` = 1,30, o `vllm-coding` + qualsevol dels altres dos grans). Consulta `litellm/config.yaml` per veure quin és el model actiu en cada moment (els altres queden comentats).
 
 **Verificat el 2026-09-02 en esta DGX Spark concreta** amb `vllm/vllm-openai:v0.28.0` (build `linux/arm64` confirmada: `docker manifest inspect vllm/vllm-openai:v0.28.0`) i `ghcr.io/berriai/litellm-database:main-stable` (també `arm64`). Si canvies de versió, torna a comprovar-ho abans de desplegar.
 
@@ -81,9 +81,11 @@ for url in [
 docker compose restart vllm-reasoning
 ```
 
-**El model de `vllm-coding`** és `Qwen/Qwen3-Coder-30B-A3B-Instruct` per defecte (ja el tenies baixat via Ollama com `qwen3-coder:30b`); canvia `VLLM_CODING_MODEL` si en vols un altre.
+**El model de `vllm-coding`** és `Qwen/Qwen3-Coder-Next-FP8` per defecte (arquitectura `Qwen3NextForCausalLM`, MoE híbrida amb atenció lineal, ~80GB en disc en FP8 natiu — verificat 2026-09-17 que vLLM v0.29.0 la reconeix); canvia `VLLM_CODING_MODEL` si en vols un altre i ajusta `GPU_MEM_UTIL`/`MEMORY_LIMIT`/`CPUS` proporcionalment.
 
-**Crida amb eines ("tools"/function calling).** Cada servei vLLM que un client pot fer servir amb eines (OpenCode, o qualsevol crida amb `"tools"` en el `chat/completions`) necessita `--enable-auto-tool-choice` i `--tool-call-parser` propi del model — sense això, `tool_choice: "auto"` falla directament amb un error, o pitjor: el model raona que hauria de cridar l'eina (es veu en `reasoning_content`) però mai arriba a emetre un `tool_calls` real, i la resposta acaba en `finish_reason: "stop"` sense cap error visible (comprovat en directe amb `gpt-oss-20b`, 2026-09-09). El parser depèn de la família del model, no és intercanviable: `openai` per a tota la família gpt-oss (format "harmony"), `qwen3_xml` per a Qwen3 genèric (`vllm-cyberlab`). Si afegixes un model nou, comprova `vllm serve --help=all | grep -A1 tool-call-parser` dins del contenidor per veure els parsers disponibles en la versió de vLLM instal·lada.
+**Baixades molt lentes en repositoris amb emmagatzematge "Xet".** Alguns repos de HuggingFace (com `Qwen3-Coder-Next-FP8`) usen el seu sistema "Xet" de blocs deduplicats en lloc de LFS pla. Sense `HF_XET_HIGH_PERFORMANCE=1` (ja configurat en `vllm-coding`), la baixada pot anar per davall de 3MB/s encara que la xarxa i el `HF_TOKEN` vagen bé — amb esta variable activa la concorrència real (desenes de connexions TCP simultànies a CloudFront) i puja a >10MB/s. Sense token, a més, HuggingFace limita molt la taxa anònima: posa sempre `HF_TOKEN` encara que el model siga públic. Mentre baixa, `du -sh` sobre el volum de caché pot no reflectir el progrés real (reconstrueix en memòria abans d'escriure) — si dubtes que estiga penjat, comprova el trànsit de xarxa real (`cat /proc/net/dev` dins del contenidor) abans de reiniciar-lo.
+
+**Crida amb eines ("tools"/function calling).** Cada servei vLLM que un client pot fer servir amb eines (OpenCode, o qualsevol crida amb `"tools"` en el `chat/completions`) necessita `--enable-auto-tool-choice` i `--tool-call-parser` propi del model — sense això, `tool_choice: "auto"` falla directament amb un error, o pitjor: el model raona que hauria de cridar l'eina (es veu en `reasoning_content`) però mai arriba a emetre un `tool_calls` real, i la resposta acaba en `finish_reason: "stop"` sense cap error visible (comprovat en directe amb `gpt-oss-20b`, 2026-09-09). El parser depèn de la família del model, no és intercanviable: `openai` per a tota la família gpt-oss (format "harmony"), `qwen3_xml` per a Qwen3 genèric (`vllm-cyberlab`), `qwen3_coder` per a la família Qwen3-Coder (`vllm-coding`, diferent del genèric `qwen3_xml`). Si afegixes un model nou, comprova `vllm serve --help=all | grep -A1 tool-call-parser` dins del contenidor per veure els parsers disponibles en la versió de vLLM instal·lada.
 
 **Migrar una instància d'Open WebUI ja existent (no un desplegament nou).** Open WebUI guarda la configuració de connexions (`openai.*`, `ollama.*`, `rag.*`, entre altres) en la taula `config` de la seua base de dades la primera vegada que arranca, i des d'aleshores **ignora les variables d'entorn** del `compose.yaml` per a eixes claus concretes — només les aplica si encara no existeix cap valor guardat. Un contenidor que ja portava temps funcionant amb Ollama (com este desplegament abans de la migració) es queda amb `ollama.base_urls` apuntant a un host que ja no existeix, amb `openai.api_base_urls`/`openai.api_keys` pel connector "OpenAI" per defecte (`https://api.openai.com/v1`, clau buida) en lloc de LiteLLM, i amb `rag.embedding_engine=ollama` per als embeddings de la RAG (fitxers/coneixement pujats), també apuntant a Ollama. Es nota perquè el selector de models d'Open WebUI queda buit i la indexació de documents falla, encara que `docker compose up` s'haja executat correctament amb els envs nous.
 
@@ -308,7 +310,7 @@ Anota el `vector_store_id` (UUID) que imprimeix: cal per a `/v1/vector_stores/{i
 docker compose --profile coding up -d --build vllm-coding
 ```
 
-Després, descomenta el bloc `coding-model` en `litellm/config.yaml` i:
+Després, descomenta el bloc `qwen3-coder-next` en `litellm/config.yaml` i:
 
 ```bash
 docker compose up -d litellm

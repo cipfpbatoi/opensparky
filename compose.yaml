@@ -204,10 +204,15 @@ services:
       # penjat, mateix parany que amb vllm-cyberlab).
       start_period: 1800s
 
-  # Model de programació / ús general (Nemotron, Qwen2.5-Coder...). Opcional:
-  # només arranca amb `docker compose --profile coding up -d`. Comparteix GPU
-  # amb vllm-reasoning: comprova que la suma de VLLM_*_GPU_MEM_UTIL no supera
-  # la memòria unificada disponible abans d'activar-lo alhora que el de raonament.
+  # Model de programació. Opcional: només arranca amb
+  # `docker compose --profile coding up -d`. Comparteix GPU amb
+  # vllm-reasoning/vllm-reasoning-lite/vllm-cyberlab: comprova que la suma de
+  # VLLM_*_GPU_MEM_UTIL no supera la memòria unificada disponible abans
+  # d'activar-lo alhora que un altre. Per defecte Qwen/Qwen3-Coder-Next-FP8
+  # (arquitectura Qwen3NextForCausalLM, MoE híbrida amb atenció lineal, 512
+  # experts/10 actius, ~80GB en disc en FP8 natiu — verificat 2026-09-17 amb
+  # vLLM v0.29.0: ModelRegistry.get_supported_archs() la reconeix). No cap
+  # junt amb vllm-reasoning (120b) ni vllm-cyberlab per l'espai que ocupa.
   vllm-coding:
     profiles:
       - coding
@@ -227,15 +232,30 @@ services:
     gpus: all
     command:
       - --model=${VLLM_CODING_MODEL:?Defineix VLLM_CODING_MODEL en el fitxer .env}
-      - --served-model-name=coding-model
+      - --served-model-name=qwen3-coder-next
       - --port=8000
       - --api-key=${VLLM_CODING_API_KEY:?Defineix VLLM_CODING_API_KEY en el fitxer .env}
-      - --gpu-memory-utilization=${VLLM_CODING_GPU_MEM_UTIL:-0.20}
+      - --gpu-memory-utilization=${VLLM_CODING_GPU_MEM_UTIL:-0.75}
       - --max-model-len=${VLLM_CODING_MAX_MODEL_LEN:-32768}
+      # Precaució, no confirmada com a necessària (mateix criteri que
+      # vllm-cyberlab): arquitectura híbrida (atenció lineal + MoE) massa
+      # nova per confiar que el camí de compilació CUDA-graph estiga ben
+      # provat en esta plataforma. Trau-ho si es confirma que compila bé.
+      - --enforce-eager
+      # Família Qwen3-Coder: parser de tool-calling específic, diferent del
+      # genèric qwen3_xml que fa servir vllm-cyberlab (Qwen3.8 no-coder).
+      - --enable-auto-tool-choice
+      - --tool-call-parser=qwen3_coder
     environment:
       HF_TOKEN: ${HF_TOKEN:-}
       VLLM_NO_USAGE_STATS: "1"
       DO_NOT_TRACK: "1"
+      # Comprovat en directe (2026-09-17): este repo usa l'emmagatzematge
+      # "Xet" de HuggingFace (per blocs, no LFS pla). Sense açò, la baixada
+      # anava a <3MB/s malgrat tindre HF_TOKEN i xarxa/CDN accessibles —
+      # HF_XET_HIGH_PERFORMANCE activa més concorrència en la reconstrucció
+      # per blocs.
+      HF_XET_HIGH_PERFORMANCE: "1"
     volumes:
       - vllm_coding_cache:/home/vllm
     networks:
@@ -248,8 +268,8 @@ services:
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=4g,mode=1777
     pids_limit: 1024
-    cpus: ${VLLM_CODING_CPUS:-8}
-    mem_limit: ${VLLM_CODING_MEMORY_LIMIT:-40g}
+    cpus: ${VLLM_CODING_CPUS:-12}
+    mem_limit: ${VLLM_CODING_MEMORY_LIMIT:-100g}
     healthcheck:
       test:
         - CMD-SHELL
@@ -259,7 +279,9 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 600s
+      # ~80GB, baixada anònima de HF pot anar lenta (comprova
+      # blobs/*.incomplete abans de donar-ho per penjat).
+      start_period: 2700s
 
   # Model SENSE cap barrera de seguretat ("abliterated"/uncensored), NOMÉS
   # per al laboratori controlat de ciberseguretat (red-team/pentest
