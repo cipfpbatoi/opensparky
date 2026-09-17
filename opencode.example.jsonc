@@ -1,0 +1,98 @@
+// Plantilla d'OpenCode per a connectar-se a LiteLLM en esta DGX Spark.
+// Copia-la a ~/.config/opencode/opencode.json (o .jsonc) i substitueix els
+// placeholders — no la deixes amb els noms d'exemple, OpenCode no la
+// carregarà si els fitxers de clau no existeixen.
+//
+// Pas 1: genera't la teua clau virtual (mai la clau mestra, vegeu
+// AGENTS.md). Tria els models que necessites del model_list actual
+// (litellm/config.yaml — no tots hi estan actius alhora, vegeu més avall):
+//
+//   ./scripts/litellm-create-key.sh el-teu-usuari 0 gpt-oss-120b,gpt-oss-20b,qwen3-coder-next
+//
+// Pas 2: guarda la clau retornada (camp "key") en un fitxer, per exemple:
+//
+//   mkdir -p ~/.config/opencode/secrets
+//   echo -n "sk-...la-teua-clau..." > ~/.config/opencode/secrets/litellm-key
+//
+// Pas 3: copia este fitxer i ajusta baseURL si cal.
+//
+// IMPORTANT sobre disponibilitat: només sol haver-hi UN o DOS d'estos
+// vLLM actius alhora (comparteixen la memòria unificada de la DGX) — mai
+// tots a la vegada. Si un model no respon, comprova quin backend està
+// realment arrancat (`docker compose ps` en el repo del servidor) i quin
+// bloc està descomentat en `litellm/config.yaml`; no és un error d'este
+// fitxer. `qwen3-coder-next` és el model per defecte perquè, en el moment
+// d'escriure açò, és el que hi ha actiu.
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "litellm/qwen3-coder-next",
+  "provider": {
+    "litellm": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "LiteLLM (DGX Spark)",
+      "options": {
+        "baseURL": "https://api.spark-6169.cipfpbatoi.lan/v1",
+        "apiKey": "{file:~/.config/opencode/secrets/litellm-key}",
+        "timeout": 600000
+      },
+      "models": {
+        // Programació. Qwen3-Coder-Next-FP8, arquitectura híbrida
+        // (MoE + atenció lineal), natiu fins a 262144 tokens de context;
+        // 131072 configurat al servidor per deixar marge de memòria.
+        "qwen3-coder-next": {
+          "name": "Qwen3-Coder-Next (programació)",
+          "limit": {
+            "context": 131072,
+            "output": 16384
+          }
+        },
+        // Raonament profund, 120B paràmetres (MXFP4). Natiu 131072.
+        "gpt-oss-120b": {
+          "name": "GPT-OSS 120B (raonament)",
+          "limit": {
+            "context": 131072,
+            "output": 16384
+          }
+        },
+        // Germà xicotet de gpt-oss-120b, mateix natiu 131072. Més ràpid,
+        // cap còmodament junt amb altres serveis xicotets (bge-m3...).
+        "gpt-oss-20b": {
+          "name": "GPT-OSS 20B (raonament, lleuger)",
+          "limit": {
+            "context": 131072,
+            "output": 16384
+          }
+        }
+      }
+    },
+    // Proveïdor SEPARAT a propòsit (no barrejar amb "litellm" de dalt):
+    // model sense barreres de seguretat, NOMÉS per al laboratori
+    // controlat de ciberseguretat (vegeu README.md, secció "Laboratori de
+    // ciberseguretat"). Necessita una clau pròpia i restringida NOMÉS a
+    // este model — mai la clau general d'ús quotidià:
+    //
+    //   ./scripts/litellm-create-key.sh el-teu-usuari-cyberlab 0 qwen3.8-cyber
+    //   echo -n "sk-..." > ~/.config/opencode/secrets/litellm-cyberlab-key
+    //
+    // Si no fas el curs/laboratori de ciberseguretat, esborra este bloc
+    // sencer — no cal que et generes esta clau.
+    "litellm-cyberlab": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "LiteLLM — laboratori ciberseguretat (SENSE barreres)",
+      "options": {
+        "baseURL": "https://api.spark-6169.cipfpbatoi.lan/v1",
+        "apiKey": "{file:~/.config/opencode/secrets/litellm-cyberlab-key}",
+        "timeout": 600000
+      },
+      "models": {
+        "qwen3.8-cyber": {
+          "name": "Qwen3.8-27B OBLITERATED (SENSE barreres — només laboratori controlat)",
+          "limit": {
+            "context": 131072,
+            "output": 16384
+          }
+        }
+      }
+    }
+  }
+}

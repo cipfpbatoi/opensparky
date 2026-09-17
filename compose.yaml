@@ -77,7 +77,7 @@ services:
       - --port=8000
       - --api-key=${VLLM_REASONING_API_KEY:?Defineix VLLM_REASONING_API_KEY en el fitxer .env}
       - --gpu-memory-utilization=${VLLM_REASONING_GPU_MEM_UTIL:-0.65}
-      - --max-model-len=${VLLM_REASONING_MAX_MODEL_LEN:-32768}
+      - --max-model-len=${VLLM_REASONING_MAX_MODEL_LEN:-131072}
       # Mateix problema comprovat en directe a vllm-reasoning-lite
       # (2026-09-09): sense açò, una crida amb "tools" acaba en
       # finish_reason=stop sense tool_calls. "openai" és el parser de vLLM
@@ -156,7 +156,7 @@ services:
       - --port=8000
       - --api-key=${VLLM_REASONING_LITE_API_KEY:?Defineix VLLM_REASONING_LITE_API_KEY en el fitxer .env}
       - --gpu-memory-utilization=${VLLM_REASONING_LITE_GPU_MEM_UTIL:-0.20}
-      - --max-model-len=${VLLM_REASONING_LITE_MAX_MODEL_LEN:-32768}
+      - --max-model-len=${VLLM_REASONING_LITE_MAX_MODEL_LEN:-131072}
       # Comprovat en directe (2026-09-09): sense açò, un client amb eines
       # (OpenCode, o qualsevol crida amb "tools") acaba en finish_reason=stop
       # sense tool_calls — el model raona que hauria de cridar l'eina
@@ -236,7 +236,7 @@ services:
       - --port=8000
       - --api-key=${VLLM_CODING_API_KEY:?Defineix VLLM_CODING_API_KEY en el fitxer .env}
       - --gpu-memory-utilization=${VLLM_CODING_GPU_MEM_UTIL:-0.75}
-      - --max-model-len=${VLLM_CODING_MAX_MODEL_LEN:-32768}
+      - --max-model-len=${VLLM_CODING_MAX_MODEL_LEN:-131072}
       # Precaució, no confirmada com a necessària (mateix criteri que
       # vllm-cyberlab): arquitectura híbrida (atenció lineal + MoE) massa
       # nova per confiar que el camí de compilació CUDA-graph estiga ben
@@ -313,7 +313,7 @@ services:
       - --port=8000
       - --api-key=${VLLM_CYBERLAB_API_KEY:?Defineix VLLM_CYBERLAB_API_KEY en el fitxer .env}
       - --gpu-memory-utilization=${VLLM_CYBERLAB_GPU_MEM_UTIL:-0.65}
-      - --max-model-len=${VLLM_CYBERLAB_MAX_MODEL_LEN:-32768}
+      - --max-model-len=${VLLM_CYBERLAB_MAX_MODEL_LEN:-131072}
       # Precaució, no confirmada com a necessària: model de 54GB, la
       # baixada per si sola ja dona 0% GPU i memòria plana molts minuts
       # (es va confondre amb el bloqueig real de compilació que sí vam

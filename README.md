@@ -121,16 +121,19 @@ Un desplegament **nou** (volum `dgx_openwebui_data`/base de dades buits) no pate
 Qualsevol eina que parle el protocol OpenAI (OpenCode, scripts, IDEs) s'ha de connectar a LiteLLM, mai a Open WebUI ni directament a un `vllm-*`. Crea-li una clau pròpia, restringida als models que necessita:
 
 ```bash
-./scripts/litellm-create-key.sh opencode-local 0 gpt-oss-120b
+./scripts/litellm-create-key.sh el-teu-usuari 0 gpt-oss-120b,gpt-oss-20b,qwen3-coder-next
 ```
 
-Configuració OpenAI-compatible per a l'eina:
+Configuració OpenAI-compatible genèrica:
 
 ```text
 Base URL: https://api.spark-6169.cipfpbatoi.lan/v1
 API key:  la clau virtual generada (sk-...)
-Model:    gpt-oss-120b
 ```
+
+**Per a OpenCode concretament**, [`opencode.example.jsonc`](opencode.example.jsonc) és una plantilla amb tots els models actuals (raonament, programació) i els límits de context/eixida ja correctes per a cadascun — copia-la a `~/.config/opencode/opencode.json`, segueix les instruccions del capçal (clau, fitxer de secret) i ja està. El model per defecte és `qwen3-coder-next`; canvia'l si prefereixes un altre.
+
+**Límits de context/eixida ("limit" en OpenCode).** Cada model té un `max-model-len` configurat en `compose.yaml`/`.env` (el límit real que accepta el servidor vLLM) i, per a OpenCode, un `limit.context`/`limit.output` corresponent en el seu `opencode.json` — si no coincidixen (per exemple, OpenCode assumint més context del que el servidor accepta), les peticions llargues fallen sense un error clar (comprovat en directe amb `qwen3-coder-next`, 2026-09-17: `VLLM_CODING_MAX_MODEL_LEN` estava a 32768 mentre el model suporta 262144 nativament, i OpenCode no tenia cap `limit` declarat). Si canvies el `MAX_MODEL_LEN` d'un model en `.env`, actualitza també el seu `limit.context` en `opencode.example.jsonc` (i en el teu `opencode.json` personal).
 
 ## Laboratori de ciberseguretat: model sense barreres de seguretat
 
