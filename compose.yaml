@@ -246,6 +246,12 @@ services:
       # genèric qwen3_xml que fa servir vllm-cyberlab (Qwen3.8 no-coder).
       - --enable-auto-tool-choice
       - --tool-call-parser=qwen3_coder
+      # Temperatura baixa (2026-09-18, petició explícita): codi més
+      # determinista. Sobreescriu només 'temperature' del generation_config.json
+      # propi del model (--generation-config auto per defecte no es toca,
+      # es fusiona amb açò); un client que envie 'temperature' en la
+      # petició (p. ex. OpenCode) el segueix podent sobreescriure.
+      - '--override-generation-config={"temperature": 0.1}'
     environment:
       HF_TOKEN: ${HF_TOKEN:-}
       VLLM_NO_USAGE_STATS: "1"
