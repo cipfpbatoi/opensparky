@@ -18,14 +18,12 @@
 //
 // IMPORTANT sobre disponibilitat: només sol haver-hi UN o DOS d'estos
 // vLLM actius alhora (comparteixen la memòria unificada de la DGX) — mai
-// tots a la vegada. Si un model no respon, comprova quin backend està
-// realment arrancat (`docker compose ps` en el repo del servidor) i quin
-// bloc està descomentat en `litellm/config.yaml`; no és un error d'este
-// fitxer. `qwen3-coder-next` és el model per defecte perquè, en el moment
-// d'escriure açò, és el que hi ha actiu.
+// tots a la vegada. Cada model de baix porta [EN] o [DIS] al final del seu
+// "name" segons si el backend està arrancat ara; actualitza els sufixos
+// (i el "model" per defecte de baix) quan canvies quin backend tens actiu.
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "litellm/qwen3-coder-next",
+  "model": "litellm/gpt-oss-120b",
   "provider": {
     "litellm": {
       "npm": "@ai-sdk/openai-compatible",
@@ -40,7 +38,7 @@
         // (MoE + atenció lineal), natiu fins a 262144 tokens de context;
         // 131072 configurat al servidor per deixar marge de memòria.
         "qwen3-coder-next": {
-          "name": "Qwen3-Coder-Next (programació)",
+          "name": "Qwen3-Coder-Next (programació) [DIS]",
           "limit": {
             "context": 131072,
             "output": 16384
@@ -48,7 +46,7 @@
         },
         // Raonament profund, 120B paràmetres (MXFP4). Natiu 131072.
         "gpt-oss-120b": {
-          "name": "GPT-OSS 120B (raonament)",
+          "name": "GPT-OSS 120B (raonament) [EN]",
           "limit": {
             "context": 131072,
             "output": 16384
@@ -57,7 +55,7 @@
         // Germà xicotet de gpt-oss-120b, mateix natiu 131072. Més ràpid,
         // cap còmodament junt amb altres serveis xicotets (bge-m3...).
         "gpt-oss-20b": {
-          "name": "GPT-OSS 20B (raonament, lleuger)",
+          "name": "GPT-OSS 20B (raonament, lleuger) [DIS]",
           "limit": {
             "context": 131072,
             "output": 16384
@@ -86,7 +84,7 @@
       },
       "models": {
         "qwen3.8-cyber": {
-          "name": "Qwen3.8-27B OBLITERATED (SENSE barreres — només laboratori controlat)",
+          "name": "Qwen3.8-27B OBLITERATED (SENSE barreres — només laboratori controlat) [DIS]",
           "limit": {
             "context": 131072,
             "output": 16384

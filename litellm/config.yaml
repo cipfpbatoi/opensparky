@@ -15,14 +15,13 @@ model_list:
       api_base: http://vllm-embeddings:8000/v1
       api_key: os.environ/VLLM_EMBEDDINGS_API_KEY
 
-  # vllm-reasoning parat (2026-09-17) per fer lloc a vllm-coding (prova amb
-  # Qwen3-Coder-Next). Descomenta i `docker compose up -d vllm-reasoning`
-  # per a tornar-lo a arrancar.
-  # - model_name: gpt-oss-120b
-  #   litellm_params:
-  #     model: openai/gpt-oss-120b
-  #     api_base: http://vllm-reasoning:8000/v1
-  #     api_key: os.environ/VLLM_REASONING_API_KEY
+  # vllm-reasoning actiu (2026-10-28), substitueix vllm-coding. Descomenta
+  # i `docker compose stop vllm-reasoning` per a tornar-lo a parar.
+  - model_name: gpt-oss-120b
+    litellm_params:
+      model: openai/gpt-oss-120b
+      api_base: http://vllm-reasoning:8000/v1
+      api_key: os.environ/VLLM_REASONING_API_KEY
 
   # Germà xicotet de gpt-oss-120b, parat (2026-09-16). Descomenta i
   # `docker compose up -d vllm-reasoning-lite` per a tornar-lo a arrancar.
@@ -32,14 +31,15 @@ model_list:
   #     api_base: http://vllm-reasoning-lite:8000/v1
   #     api_key: os.environ/VLLM_REASONING_LITE_API_KEY
 
-  # Model de programació, actiu (2026-09-17): Qwen3-Coder-Next-FP8, servit
-  # per vllm-coding (`docker compose --profile coding up -d`, vegeu
-  # README.md sobre memòria unificada compartida).
-  - model_name: qwen3-coder-next
-    litellm_params:
-      model: openai/qwen3-coder-next
-      api_base: http://vllm-coding:8000/v1
-      api_key: os.environ/VLLM_CODING_API_KEY
+  # Model de programació, parat (2026-10-28) per fer lloc a vllm-reasoning.
+  # Descomenta i `docker compose --profile coding up -d vllm-coding` per a
+  # tornar-lo a arrancar (vegeu README.md sobre memòria unificada
+  # compartida: no cap junt amb vllm-reasoning).
+  # - model_name: qwen3-coder-next
+  #   litellm_params:
+  #     model: openai/qwen3-coder-next
+  #     api_base: http://vllm-coding:8000/v1
+  #     api_key: os.environ/VLLM_CODING_API_KEY
 
   # Model SENSE barreres de seguretat ("abliterated"), NOMÉS per al
   # laboratori controlat de ciberseguretat — mai per a ús general. Parat
