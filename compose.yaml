@@ -716,7 +716,7 @@ services:
       start_period: 60s
 
   caddy:
-    image: caddy:2.11.4-alpine
+    image: caddy:2.11.9-alpine
     platform: linux/arm64
     container_name: dgx-caddy
     restart: unless-stopped
