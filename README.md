@@ -403,6 +403,7 @@ El repositori ha de ser privat. `.env`, còpies i secrets no s'han de pujar.
 
 - Cap servei d'inferència (vLLM) ni la base de dades es publica fora de la xarxa Docker; només Open WebUI i LiteLLM tenen loopback per a administració local.
 - `LITELLM_MASTER_KEY` dona accés total (crear/revocar claus, `/ui`, veure despesa de tothom): no s'usa mai en Open WebUI, scripts d'usuari final ni automatitzacions — sols en `scripts/litellm-create-key.sh`, en loopback.
+- `litellm/config.yaml` té `general_settings.disable_env_credential_login: true`: tanca l'entrada a `/ui` amb la clau mestra (o `UI_USERNAME`/`UI_PASSWORD`, no usades ací) com a contrasenya compartida d'admin. Cal almenys un usuari `proxy_admin` propi amb contrasenya (Internal Users → Invite User a `/ui`) **abans** d'activar-ho, o et quedes fora de la UI. Si cal recuperar l'accés d'emergència, posa-ho temporalment a `false`, entra amb la clau mestra i torna a activar-ho després de crear/recuperar un usuari.
 - Cada usuari o aplicació ha de tindre una clau virtual pròpia amb els models i el pressupost mínims necessaris.
 - `LITELLM_SALT_KEY` s'ha de fixar i conservar: xifra les claus de proveïdor guardades en PostgreSQL; perdre-la trenca el desxifratge d'eixes dades.
 - Les claus internes `VLLM_*_API_KEY` viatgen només per la xarxa Docker, però mai han d'estar buides (defensa en profunditat).

@@ -63,6 +63,11 @@ model_list:
 
 general_settings:
   store_model_in_db: false
+  # Tanca l'accés d'admin compartit (clau mestra com a contrasenya de /ui,
+  # o UI_USERNAME/UI_PASSWORD). Requereix tindre ja almenys un usuari
+  # proxy_admin propi amb contrasenya (Internal Users → Invite User),
+  # perquè si no et quedes fora de la UI. Vegeu README.md.
+  disable_env_credential_login: true
 
 litellm_settings:
   drop_params: true
