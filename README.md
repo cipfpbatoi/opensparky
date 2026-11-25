@@ -135,6 +135,20 @@ API key:  la clau virtual generada (sk-...)
 
 **Límits de context/eixida ("limit" en OpenCode).** Cada model té un `max-model-len` configurat en `compose.yaml`/`.env` (el límit real que accepta el servidor vLLM) i, per a OpenCode, un `limit.context`/`limit.output` corresponent en el seu `opencode.json` — si no coincidixen (per exemple, OpenCode assumint més context del que el servidor accepta), les peticions llargues fallen sense un error clar (comprovat en directe amb `qwen3-coder-next`, 2026-09-17: `VLLM_CODING_MAX_MODEL_LEN` estava a 32768 mentre el model suporta 262144 nativament, i OpenCode no tenia cap `limit` declarat). Si canvies el `MAX_MODEL_LEN` d'un model en `.env`, actualitza també el seu `limit.context` en `opencode.example.jsonc` (i en el teu `opencode.json` personal).
 
+## Accés restringit per a grups (secretaria, alumnat, etc.)
+
+Dos patrons diferents, segons si l'ús és per xat (persones) o per API (codi):
+
+**Open WebUI (xat) amb documents privats d'un grup, p. ex. secretaria:**
+1. Crear els comptes del grup a Admin Panel → Users → Add User (el signup està desactivat, `ENABLE_SIGNUP=false`).
+2. Crear un Grup a Admin Panel → Groups i afegir-hi eixos comptes.
+3. Crear la Knowledge Base a Workspace → Knowledge, pujar-hi documents (Tika + bge-m3 ja funcionen per a l'extracció/embeddings).
+4. Posar l'accés de la Knowledge Base a eixe grup només, mai "public".
+
+**Per a dades sensibles entre persones, este és el patró correcte — no el magatzem de vectors de LiteLLM** (vegeu més avall, "Privacitat entre magatzems": no aïlla per equip de veritat, qualsevol clau vàlida pot cercar-hi).
+
+**API de LiteLLM directa (codi), p. ex. alumnat que vol cridar l'API ells mateixos:** clau virtual individual per persona, agrupades en un equip (team) amb límit compartit (`rpm_limit`/`tpm_limit`/pressupost agregats, no esgotar la GPU compartida), models restringits al que toca provar — vegeu `API_USUARIS.md`, secció "Grups grans amb límit compartit", i `scripts/litellm-create-team.sh`.
+
 ## Laboratori de ciberseguretat: model sense barreres de seguretat
 
 **⚠️ NOMÉS per a un entorn molt controlat de proves (curs de ciberseguretat, red-team/pentest educatiu). Mai per a ús general.**

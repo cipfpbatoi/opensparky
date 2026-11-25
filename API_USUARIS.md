@@ -25,6 +25,24 @@ Només un administrador, en loopback, amb la clau mestra:
 
 La resposta inclou `"key": "sk-..."`. Eixa és la clau que rep la persona o el sistema, res més.
 
+### Grups grans amb límit compartit (p. ex. alumnat)
+
+Per a molta gent compartint la mateixa GPU (una classe sencera), crea primer un **equip (team)** amb el límit agregat entre totes les claus que s'hi afigen, i després una clau individual per persona dins d'eixe equip (revocable una a una, però totes topen amb el mateix límit compartit):
+
+```bash
+./scripts/litellm-create-team.sh <team_id> [model1,model2,...] [rpm_limit] [tpm_limit] [pressupost_usd] [budget_duration]
+./scripts/litellm-create-key.sh <identificador> [pressupost_usd] [model1,model2,...] <team_id>
+
+# Exemple (equip real d'este desplegament, 2026-11-25): 30 peticions/min i
+# 100.000 tokens/min AGREGATS entre tot l'alumnat, pressupost reiniciat
+# cada 30 dies, restringit a gpt-oss-120b i bge-m3.
+./scripts/litellm-create-team.sh alumnes-ia gpt-oss-120b,bge-m3 30 100000 0 30d
+./scripts/litellm-create-key.sh alumne.nom1 0 gpt-oss-120b,bge-m3 alumnes-ia
+./scripts/litellm-create-key.sh alumne.nom2 0 gpt-oss-120b,bge-m3 alumnes-ia
+```
+
+`rpm_limit`/`tpm_limit`/pressupost del team són **agregats** (compartits entre totes les claus de l'equip), no per alumne individual — pensats per a que la classe sencera no esgote la GPU compartida amb els altres usos del desplegament, no per limitar algú en concret (per a això, revoca només la seua clau).
+
 ### Llistar models
 
 ```bash
@@ -84,6 +102,8 @@ print(response.choices[0].message.content)
 
 Open WebUI (`https://spark-6169.cipfpbatoi.lan`) és ara un client més de LiteLLM: no exposa la seua pròpia API de claus (`ENABLE_API_KEYS` s'ha retirat). Per accedir per API, usa sempre la de LiteLLM (secció 1).
 
+Per a grups que necessiten accés restringit a documents propis dins d'Open WebUI (p. ex. secretaria amb una base de coneixement que només ells poden veure), el patró és **Grups + Knowledge** d'Open WebUI (Admin Panel → Users/Groups i Workspace → Knowledge), no cap mecanisme de LiteLLM — vegeu README.md, secció "Accés restringit per a grups".
+
 ## 3. Administració de claus i pressupostos
 
 La UI d'administració de LiteLLM (usuaris, claus, despesa) és:
@@ -92,7 +112,7 @@ La UI d'administració de LiteLLM (usuaris, claus, despesa) és:
 https://api.spark-6169.cipfpbatoi.lan/ui
 ```
 
-S'autentica amb `LITELLM_MASTER_KEY`. Des d'ací (o per API) es poden:
+S'autentica amb un usuari `proxy_admin` propi (correu+contrasenya, creat des de Internal Users → Invite User) — la clau mestra ja **no** funciona com a contrasenya d'esta UI (`disable_env_credential_login: true`). Des d'ací (o per API) es poden:
 
 - crear/revocar claus virtuals;
 - assignar pressupost (`max_budget`) i límits de peticions (`rpm`/`tpm`) per clau;

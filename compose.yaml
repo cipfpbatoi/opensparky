@@ -640,6 +640,11 @@ services:
       OPENAI_API_BASE_URLS: http://litellm:4000/v1
       OPENAI_API_KEYS: ${OPENWEBUI_LITELLM_API_KEY:?Defineix OPENWEBUI_LITELLM_API_KEY en el fitxer .env (clau virtual creada amb scripts/litellm-create-key.sh)}
 
+      # Model seleccionat per defecte en un xat nou. Sense açò, Open WebUI
+      # agafa el primer de la llista de litellm/config.yaml (bge-m3,
+      # pensat per a embeddings, no per a xat).
+      DEFAULT_MODELS: ${OPEN_WEBUI_DEFAULT_MODEL:-gpt-oss-120b}
+
       # Usuaris, xats i base vectorial en el mateix PostgreSQL.
       DATABASE_URL: postgresql://${POSTGRES_USER:-openwebui}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-openwebui}
       VECTOR_DB: pgvector
